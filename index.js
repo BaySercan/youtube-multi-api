@@ -14,8 +14,6 @@ const execFileAsync = promisify(execFile);
 const app = express();
 app.use(cors());
 
-// Apply RapidAPI authentication middleware to all routes
-app.use(rapidApiAuth);
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
@@ -103,14 +101,6 @@ async function executeYtDlp(url, options) {
     return stdout;
 }
 
-app.get("/", (req, res) => {
-    const ping = new Date();
-    ping.setHours(ping.getHours() - 3);
-    console.log(
-        `Ping at: ${ping.getUTCHours()}:${ping.getUTCMinutes()}:${ping.getUTCSeconds()}`
-    );
-    res.sendStatus(200);
-});
 
 // Health check endpoint (no authentication required)
 app.get("/ping", (req, res) => {
@@ -120,6 +110,9 @@ app.get("/ping", (req, res) => {
         version: "1.0.0"
     });
 });
+
+// Apply RapidAPI authentication middleware to all routes except /ping
+app.use(rapidApiAuth);
 
 app.get("/info", async (req, res) => {
     const { url } = req.query;

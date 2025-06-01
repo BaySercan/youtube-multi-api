@@ -19,6 +19,18 @@ OPENROUTER_API_KEY=your_api_key_here
 
 ## API Endpoints
 
+### GET /ping
+Health check endpoint (no authentication required)
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "current ISO timestamp",
+  "version": "1.0.0"
+}
+```
+
 ### GET /info
 Get video metadata
 

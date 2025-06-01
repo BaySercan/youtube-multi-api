@@ -1,12 +1,12 @@
 require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
-//const youtubedl = require('youtube-dl-exec');
+const youtubedl = require('youtube-dl-exec');
 const { promises: fs } = require("fs");
 const path = require("path");
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-//const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const axios = require('axios');
 const rapidApiAuth = require('./middleware/auth');
 
@@ -20,10 +20,14 @@ const tempDir = path.join(__dirname, "temp");
 fs.mkdir(tempDir, { recursive: true }).catch(console.error);
 
 // Get the absolute path to yt-dlp executable
-const ytDlpPath = require('youtube-dl-exec').getYtDlpBinaryPathSync();
+const ytDlpPath = require('youtube-dl-exec').path;
 
 // Function to call OpenRouter API
 async function callAIModel(messages, useDeepSeek = true) {
+    if (!process.env.OPENROUTER_API_KEY) {
+        throw new Error('OPENROUTER_API_KEY environment variable is not set');
+    }
+    
     const model = useDeepSeek ? 'deepseek/deepseek-r1-0528:free' : 'qwen/qwen3-14b:free';
     const maxRetries = 3;
     let attempt = 0;
@@ -160,21 +164,54 @@ app.get("/mp3", async (req, res) => {
         });
 
         const info = JSON.parse(infoOutput);
-        const outputPath = path.join(tempDir, `${Date.now()}.mp3`);
+        const fileName = `${info.title.replace(/[^\w\s]/gi, '')}.mp3`;
+        
+        // Set headers for streaming response
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'audio/mpeg');
 
-        // Download as audio
-        await executeYtDlp(url, {
-            extractAudio: true,
-            audioFormat: 'mp3',
-            output: outputPath,
-            noCheckCertificates: true,
-            noWarnings: true
+        // Execute yt-dlp with streaming
+        const args = [
+            url,
+            '--extract-audio',
+            '--audio-format', 'mp3',
+            '--no-check-certificates',
+            '--no-warnings',
+            '-o', '-'
+        ];
+
+        const child = require('child_process').spawn(ytDlpPath, args);
+
+        // Handle errors
+        child.on('error', (err) => {
+            console.error('Streaming error:', err);
+            if (!res.headersSent) {
+                res.status(500).send('Error streaming audio');
+            }
         });
 
-        res.download(outputPath, `${info.title}.mp3`, async (err) => {
-            if (err) console.error("Download error:", err);
-            // Clean up: delete the temporary file
-            await fs.unlink(outputPath).catch(console.error);
+        child.stderr.on('data', (data) => {
+            console.error(`[yt-dlp stderr] ${data}`);
+        });
+
+        // Stream output directly to response
+        child.stdout.pipe(res);
+
+        // Handle process exit
+        child.on('close', (code) => {
+            if (code !== 0) {
+                console.error(`yt-dlp process exited with code ${code}`);
+                if (!res.headersSent) {
+                    res.status(500).end();
+                }
+            }
+        });
+
+        // Handle client disconnect
+        req.on('close', () => {
+            if (!child.killed) {
+                child.kill();
+            }
         });
 
     } catch (error) {
@@ -201,20 +238,53 @@ app.get("/mp4", async (req, res) => {
         });
 
         const info = JSON.parse(infoOutput);
-        const outputPath = path.join(tempDir, `${Date.now()}.mp4`);
+        const fileName = `${info.title.replace(/[^\w\s]/gi, '')}.mp4`;
+        
+        // Set headers for streaming response
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'video/mp4');
 
-        // Download video
-        await executeYtDlp(url, {
-            format: 'mp4',
-            output: outputPath,
-            noCheckCertificates: true,
-            noWarnings: true
+        // Execute yt-dlp with streaming
+        const args = [
+            url,
+            '--format', 'mp4',
+            '--no-check-certificates',
+            '--no-warnings',
+            '-o', '-'
+        ];
+
+        const child = require('child_process').spawn(ytDlpPath, args);
+
+        // Handle errors
+        child.on('error', (err) => {
+            console.error('Streaming error:', err);
+            if (!res.headersSent) {
+                res.status(500).send('Error streaming video');
+            }
         });
 
-        res.download(outputPath, `${info.title}.mp4`, async (err) => {
-            if (err) console.error("Download error:", err);
-            // Clean up: delete the temporary file
-            await fs.unlink(outputPath).catch(console.error);
+        child.stderr.on('data', (data) => {
+            console.error(`[yt-dlp stderr] ${data}`);
+        });
+
+        // Stream output directly to response
+        child.stdout.pipe(res);
+
+        // Handle process exit
+        child.on('close', (code) => {
+            if (code !== 0) {
+                console.error(`yt-dlp process exited with code ${code}`);
+                if (!res.headersSent) {
+                    res.status(500).end();
+                }
+            }
+        });
+
+        // Handle client disconnect
+        req.on('close', () => {
+            if (!child.killed) {
+                child.kill();
+            }
         });
 
     } catch (error) {
@@ -257,43 +327,39 @@ app.get("/transcript", async (req, res) => {
             });
         }
 
-        // Download subtitles using yt-dlp
-        const timestamp = Date.now();
-        const outputPath = path.join(tempDir, `${timestamp}`);
-        
-        await executeYtDlp(url, {
+        // Download subtitles using yt-dlp and capture the output
+        const subtitleContent = await executeYtDlp(url, {
             skipDownload: true,
             writeSubs: true,
             writeAutoSubs: true,
             subLang: lang,
-            output: outputPath,
+            print: '%\(subtitles\.' + lang + '\.0\.ext\)s:%\(subtitles\.' + lang + '\.0\.data\)s',
             noCheckCertificates: true,
             noWarnings: true
         });
 
-        // The subtitle file will be saved with a .vtt extension
-        const vttPath = `${outputPath}.${lang}.vtt`;
-        let subtitleContent;
-        
-        try {
-            subtitleContent = await fs.readFile(vttPath, 'utf-8');
-        } catch (error) {
-            console.error('Error reading VTT file:', error);
-            throw new Error('Failed to read subtitle file');
-        }
+        // Parse the subtitle content
+        const [format, ...contentParts] = subtitleContent.split(':');
+        const content = contentParts.join(':').trim();
 
-        // Parse VTT content and extract only the text lines
-        const subtitleLines = subtitleContent
-            .split('\n')
-            .filter(line => 
-                line.trim() && 
-                !line.includes('-->') && 
-                !line.match(/^WEBVTT/) &&
-                !line.match(/^Kind:/i) &&
-                !line.match(/^Language:/i) &&
-                !line.match(/^\d+$/) &&
-                !line.match(/^\d{2}:\d{2}/)
-            );
+        // For VTT format, we need to parse the content
+        let subtitleLines = [];
+        if (format.toLowerCase() === 'vtt') {
+            subtitleLines = content
+                .split('\n')
+                .filter(line => 
+                    line.trim() && 
+                    !line.includes('-->') && 
+                    !line.match(/^WEBVTT/) &&
+                    !line.match(/^Kind:/i) &&
+                    !line.match(/^Language:/i) &&
+                    !line.match(/^\d+$/) &&
+                    !line.match(/^\d{2}:\d{2}/)
+                );
+        } else {
+            // For other formats, just use the content as is
+            subtitleLines = content.split('\n');
+        }
 
         // Basic cleanup of the text
         const cleanedLines = subtitleLines.map(line => 
@@ -374,9 +440,6 @@ app.get("/transcript", async (req, res) => {
             // Skip AI processing and just return the cleaned text
             finalTranscript = cleanedLines.join(' ');
         }
-
-        // Clean up the temporary files
-        await fs.unlink(vttPath).catch(console.error);
 
         // Format the response
         res.json({

@@ -1,6 +1,6 @@
 {
-    "name": "youtube-download-api",
-    "description": "",
+    "name": "youtube-multi-api",
+    "description": "A YouTube API for downloading videos in multiple formats and resolutions and getting video transcript by AI",
     "version": "1.0.0",
     "main": "index.js",
     "scripts": {
@@ -9,18 +9,20 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/MatheusIshiyama/youtube-download-api.git"
+        "url": "git+https://github.com/BaySercan/youtube-multi-api.git"
     },
-    "author": "",
+    "author": "BaySercan",
     "license": "ISC",
     "bugs": {
-        "url": "https://github.com/MatheusIshiyama/youtube-download-api/issues"
+        "url": "https://github.com/BaySercan/youtube-multi-api/issues"
     },
-    "homepage": "https://github.com/MatheusIshiyama/youtube-download-api#readme",
+    "homepage": "https://github.com/BaySercan/youtube-multi-api#readme",
     "dependencies": {
+        "axios": "^1.9.0",
         "cors": "^2.8.5",
+        "dotenv": "^16.5.0",
         "express": "^4.17.1",
-        "ytdl-core": "^4.5.0"
-    },
-    "devDependencies": {}
+        "node-fetch": "^3.3.2",
+        "youtube-dl-exec": "^3.0.21"
+    }
 }

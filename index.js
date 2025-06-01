@@ -8,10 +8,14 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 //const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const axios = require('axios');
+const rapidApiAuth = require('./middleware/auth');
 
 const execFileAsync = promisify(execFile);
 const app = express();
 app.use(cors());
+
+// Apply RapidAPI authentication middleware to all routes
+app.use(rapidApiAuth);
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
@@ -106,6 +110,15 @@ app.get("/", (req, res) => {
         `Ping at: ${ping.getUTCHours()}:${ping.getUTCMinutes()}:${ping.getUTCSeconds()}`
     );
     res.sendStatus(200);
+});
+
+// Health check endpoint (no authentication required)
+app.get("/ping", (req, res) => {
+    res.status(200).json({
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0"
+    });
 });
 
 app.get("/info", async (req, res) => {

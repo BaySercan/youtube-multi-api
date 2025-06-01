@@ -1,0 +1,169 @@
+openapi: 3.0.0
+info:
+  title: YouTube Multi API
+  description: API for downloading YouTube videos as MP3/MP4 and getting AI-processed transcripts
+  version: 1.0.0
+  contact:
+    name: BaySercan
+    url: https://github.com/BaySercan/youtube-multi-api
+servers:
+  - url: http://localhost:3500
+    description: Local development server
+  - url: https://youtube-multi-api.vercel.app
+    description: Production server
+paths:
+  /info:
+    get:
+      summary: Get video metadata
+      description: Retrieve metadata about a YouTube video
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+          description: YouTube video URL
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title:
+                    type: string
+                  thumbnail:
+                    type: string
+                  video_id:
+                    type: string
+                  channel_id:
+                    type: string
+                  channel_name:
+                    type: string
+                  post_date:
+                    type: string
+              example:
+                title: "Example Video Title"
+                thumbnail: "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg"
+                video_id: "dQw4w9WgXcQ"
+                channel_id: "UC12345678"
+                channel_name: "Example Channel"
+                post_date: "20230101"
+        '400':
+          description: Invalid request
+  /mp3:
+    get:
+      summary: Download video as MP3
+      description: Download a YouTube video as an MP3 audio file
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+          description: YouTube video URL
+      responses:
+        '200':
+          description: MP3 file download
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid request
+  /mp4:
+    get:
+      summary: Download video as MP4
+      description: Download a YouTube video as an MP4 video file
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+          description: YouTube video URL
+      responses:
+        '200':
+          description: MP4 file download
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid request
+  /transcript:
+    get:
+      summary: Get video transcript
+      description: Retrieve AI-processed video transcript
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+          description: YouTube video URL
+        - in: query
+          name: lang
+          schema:
+            type: string
+            default: tr
+          description: Language code (e.g., en, tr, es)
+        - in: query
+          name: skipAI
+          schema:
+            type: boolean
+            default: false
+          description: Skip AI processing
+        - in: query
+          name: useDeepSeek
+          schema:
+            type: boolean
+            default: true
+          description: Use DeepSeek model for processing
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  title:
+                    type: string
+                  language:
+                    type: string
+                  transcript:
+                    type: string
+                  ai_notes:
+                    type: string
+                  isProcessed:
+                    type: boolean
+                  processor:
+                    type: string
+                  video_id:
+                    type: string
+                  channel_id:
+                    type: string
+                  channel_name:
+                    type: string
+                  post_date:
+                    type: string
+              example:
+                success: true
+                title: "Example Video Title"
+                language: "tr"
+                transcript: "This is the cleaned transcript text..."
+                ai_notes: "Processing notes from AI model"
+                isProcessed: true
+                processor: "deepseek"
+                video_id: "dQw4w9WgXcQ"
+                channel_id: "UC12345678"
+                channel_name: "Example Channel"
+                post_date: "20230101"
+        '400':
+          description: Invalid request or no subtitles available

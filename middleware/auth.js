@@ -1,4 +1,9 @@
 const rapidApiAuth = (req, res, next) => {
+    // Skip authentication in local development
+    if (process.env.NODE_ENV === 'development') {
+        return next();
+    }
+
     const proxySecret = req.headers['x-rapidapi-proxy-secret'];
     const user = req.headers['x-rapidapi-user'];
     

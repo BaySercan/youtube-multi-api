@@ -1,11 +1,13 @@
 require('dotenv').config();
+const { spawn } = require('child_process');
 const express = require("express");
 const cors = require("cors");
-const ytdl = require('ytdl-core');
 const { promises: fs } = require("fs");
 const path = require("path");
 const axios = require('axios');
 const rapidApiAuth = require('./middleware/auth');
+const ytdl = require('youtube-dl-exec');
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
 const app = express();
 app.use(cors());
@@ -78,22 +80,70 @@ async function callAIModel(messages, useDeepSeek = true) {
     throw new Error('Failed to get response after maximum retries');
 }
 
-// Helper function to get video info
-async function getVideoInfo(url) {
-    return ytdl.getInfo(url);
+// Helper function to get video info with retry
+async function getVideoInfo(url, retries = 3) {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    
+    for (let i = 0; i < retries; i++) {
+        try {
+            console.log(`Fetching video info for: ${url}`);
+            
+            // Get the absolute path to yt-dlp executable (compatible with current youtube-dl-exec version)
+            const binPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
+            const quotedPath = `"${binPath}"`;
+            
+            // Build command with proper quoting
+            const command = [
+                quotedPath,
+                '--dump-json',
+                '--no-warnings',
+                '--no-check-certificates',
+                '--prefer-free-formats',
+                `--user-agent "${USER_AGENT}"`,
+                `"${url}"`
+            ].join(' ');
+            
+            const { stdout, stderr } = await execAsync(command, { shell: true });
+            
+            if (stderr) {
+                console.error(`yt-dlp stderr: ${stderr}`);
+            }
+            
+            const info = JSON.parse(stdout);
+            console.log(`Successfully fetched info for video: ${info.title}`);
+            return info;
+        } catch (error) {
+            console.error(`Error getting video info (attempt ${i+1}/${retries}):`, error);
+            
+            if (i === retries - 1) {
+                throw error;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
 }
 
 // Helper function to get video transcript
 async function getVideoTranscript(url, lang = 'tr') {
-    const info = await ytdl.getInfo(url);
-    const tracks = info.player_response.captions.playerCaptionsTracklistRenderer.captionTracks;
+    const info = await getVideoInfo(url);
+    console.log(`Available automatic captions: ${JSON.stringify(info.automatic_captions)}`);
+    console.log(`Available subtitles: ${JSON.stringify(info.subtitles)}`);
     
-    const track = tracks.find(t => t.languageCode === lang);
-    if (!track) {
+    const tracks = info.automatic_captions?.[lang] || info.subtitles?.[lang] || [];
+    
+    if (tracks.length === 0) {
+        const availableLangs = Object.keys(info.automatic_captions || {});
+        console.error(`No subtitles available for language: ${lang}. Available languages: ${availableLangs.join(', ')}`);
         throw new Error(`No subtitles available for language: ${lang}`);
     }
     
-    const transcriptResponse = await axios.get(track.baseUrl);
+    // Prefer XML format if available, otherwise take the first one
+    const track = tracks.find(t => t.ext === 'ttml' || t.ext === 'xml' || t.ext === 'srv1') || tracks[0];
+    console.log(`Using transcript track: ${track.url}`);
+    const transcriptResponse = await axios.get(track.url);
     return transcriptResponse.data;
 }
 
@@ -113,19 +163,29 @@ app.use(rapidApiAuth);
 app.get("/info", async (req, res) => {
     const { url } = req.query;
 
+    // Validate and normalize URL parameter
     if (!url) {
-        return res.status(400).send("Invalid query");
+        return res.status(400).send("Missing url parameter");
+    }
+    
+    // Handle case where url might be an array (multiple params)
+    const videoUrl = Array.isArray(url) ? url[0] : url;
+    
+    if (typeof videoUrl !== 'string') {
+        return res.status(400).send("url parameter must be a string");
     }
 
     try {
-        const info = await getVideoInfo(url);
+        const info = await getVideoInfo(videoUrl);
         res.send({
-            title: info.videoDetails.title,
-            thumbnail: info.videoDetails.thumbnails[0].url,
-            video_id: info.videoDetails.videoId,
-            channel_id: info.videoDetails.channelId,
-            channel_name: info.videoDetails.author.name,
-            post_date: new Date(parseInt(info.videoDetails.publishDate)).toISOString()
+            title: info.title,
+            thumbnail: info.thumbnail,
+            video_id: info.id,
+            channel_id: info.channel_id,
+            channel_name: info.channel,
+            post_date: new Date(
+              `${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`
+            ).toISOString()
         });
     } catch (error) {
         console.error("Error:", error);
@@ -136,37 +196,42 @@ app.get("/info", async (req, res) => {
 app.get("/mp3", async (req, res) => {
     const { url } = req.query;
 
+    // Validate and normalize URL parameter
     if (!url) {
-        return res.status(400).send("Invalid query");
+        return res.status(400).send("Missing url parameter");
+    }
+    
+    // Handle case where url might be an array (multiple params)
+    const videoUrl = Array.isArray(url) ? url[0] : url;
+    
+    if (typeof videoUrl !== 'string') {
+        return res.status(400).send("url parameter must be a string");
     }
 
     try {
-        // Get video info first
-        const infoOutput = await executeYtDlp(url, {
-            dumpSingleJson: true,
-            noCheckCertificates: true,
-            noWarnings: true
-        });
-
-        const info = JSON.parse(infoOutput);
+        // Get video info using existing function
+        const info = await getVideoInfo(videoUrl);
         const fileName = `${info.title.replace(/[^\w\s]/gi, '')}.mp3`;
         
         // Set headers for streaming response
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
         res.setHeader('Content-Type', 'audio/mpeg');
 
-        // Execute yt-dlp with streaming
+        // Use youtube-dl-exec to stream the audio (platform-independent)
+        const ytDlpPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
         const args = [
-            url,
             '--extract-audio',
             '--audio-format', 'mp3',
             '--no-check-certificates',
             '--no-warnings',
-            '-o', '-'
+            '-o', '-',
+            videoUrl
         ];
-
-        const child = require('child_process').spawn(ytDlpPath, args);
-
+        
+        const child = spawn(ytDlpPath, args);
+        
+        child.stdout.pipe(res);
+        
         // Handle errors
         child.on('error', (err) => {
             console.error('Streaming error:', err);
@@ -174,29 +239,9 @@ app.get("/mp3", async (req, res) => {
                 res.status(500).send('Error streaming audio');
             }
         });
-
+        
         child.stderr.on('data', (data) => {
             console.error(`[yt-dlp stderr] ${data}`);
-        });
-
-        // Stream output directly to response
-        child.stdout.pipe(res);
-
-        // Handle process exit
-        child.on('close', (code) => {
-            if (code !== 0) {
-                console.error(`yt-dlp process exited with code ${code}`);
-                if (!res.headersSent) {
-                    res.status(500).end();
-                }
-            }
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
-            if (!child.killed) {
-                child.kill();
-            }
         });
 
     } catch (error) {
@@ -210,36 +255,41 @@ app.get("/mp3", async (req, res) => {
 app.get("/mp4", async (req, res) => {
     const { url } = req.query;
 
+    // Validate and normalize URL parameter
     if (!url) {
-        return res.status(400).send("Invalid query");
+        return res.status(400).send("Missing url parameter");
+    }
+    
+    // Handle case where url might be an array (multiple params)
+    const videoUrl = Array.isArray(url) ? url[0] : url;
+    
+    if (typeof videoUrl !== 'string') {
+        return res.status(400).send("url parameter must be a string");
     }
 
     try {
-        // Get video info first
-        const infoOutput = await executeYtDlp(url, {
-            dumpSingleJson: true,
-            noCheckCertificates: true,
-            noWarnings: true
-        });
-
-        const info = JSON.parse(infoOutput);
+        // Get video info using existing function
+        const info = await getVideoInfo(videoUrl);
         const fileName = `${info.title.replace(/[^\w\s]/gi, '')}.mp4`;
         
         // Set headers for streaming response
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
         res.setHeader('Content-Type', 'video/mp4');
 
-        // Execute yt-dlp with streaming
+        // Use youtube-dl-exec to stream the video (platform-independent)
+        const ytDlpPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
         const args = [
-            url,
             '--format', 'mp4',
             '--no-check-certificates',
             '--no-warnings',
-            '-o', '-'
+            '-o', '-',
+            videoUrl
         ];
-
-        const child = require('child_process').spawn(ytDlpPath, args);
-
+        
+        const child = spawn(ytDlpPath, args);
+        
+        child.stdout.pipe(res);
+        
         // Handle errors
         child.on('error', (err) => {
             console.error('Streaming error:', err);
@@ -247,30 +297,11 @@ app.get("/mp4", async (req, res) => {
                 res.status(500).send('Error streaming video');
             }
         });
-
+        
         child.stderr.on('data', (data) => {
             console.error(`[yt-dlp stderr] ${data}`);
         });
 
-        // Stream output directly to response
-        child.stdout.pipe(res);
-
-        // Handle process exit
-        child.on('close', (code) => {
-            if (code !== 0) {
-                console.error(`yt-dlp process exited with code ${code}`);
-                if (!res.headersSent) {
-                    res.status(500).end();
-                }
-            }
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
-            if (!child.killed) {
-                child.kill();
-            }
-        });
 
     } catch (error) {
         console.error("Error:", error);
@@ -285,13 +316,21 @@ app.get("/transcript", async (req, res) => {
     const skipAI = req.query.skipAI === 'true';
     const useDeepSeek = req.query.useDeepSeek !== 'false';
 
+    // Validate and normalize URL parameter
     if (!url) {
-        return res.status(400).send("Invalid query");
+        return res.status(400).send("Missing url parameter");
+    }
+    
+    // Handle case where url might be an array (multiple params)
+    const videoUrl = Array.isArray(url) ? url[0] : url;
+    
+    if (typeof videoUrl !== 'string') {
+        return res.status(400).send("url parameter must be a string");
     }
 
     try {
-        const info = await getVideoInfo(url);
-        const transcriptXml = await getVideoTranscript(url, lang);
+        const info = await getVideoInfo(videoUrl);
+        const transcriptXml = await getVideoTranscript(videoUrl, lang);
         
         // Parse XML transcript
         const lines = transcriptXml.match(/<text start="[^"]+" dur="[^"]+">([^<]+)<\/text>/g);
@@ -358,7 +397,7 @@ app.get("/transcript", async (req, res) => {
                     },
                     {
                         role: "user",
-                        content: firstResponse.choices[0].message.content
+                    content: firstResponse.choices[0].message.content
                     }
                 ];
 
@@ -386,16 +425,18 @@ app.get("/transcript", async (req, res) => {
         // Format the response
         res.json({
             success: true,
-            title: info.videoDetails.title,
+            title: info.title,
             language: lang,
             transcript: finalTranscript,
             ai_notes: aiNotes,
             isProcessed: !skipAI,
             processor: useDeepSeek ? 'deepseek' : 'qwen',
-            video_id: info.videoDetails.videoId,
-            channel_id: info.videoDetails.channelId,
-            channel_name: info.videoDetails.author.name,
-            post_date: new Date(parseInt(info.videoDetails.publishDate)).toISOString()
+            video_id: info.id,
+            channel_id: info.channel_id,
+            channel_name: info.channel,
+            post_date: new Date(
+              `${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`
+            ).toISOString()
         });
 
     } catch (error) {

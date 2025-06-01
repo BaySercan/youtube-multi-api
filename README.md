@@ -1,4 +1,4 @@
-# YouTube Download API
+# YouTube Multi API
 
 REST API to download YouTube videos as MP3/MP4 files and get video transcripts. Built with Node.js, Express, and yt-dlp.
 

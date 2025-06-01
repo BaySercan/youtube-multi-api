@@ -1,9 +1,7 @@
 const rapidApiAuth = (req, res, next) => {
-    // RapidAPI headers
     const proxySecret = req.headers['x-rapidapi-proxy-secret'];
     const user = req.headers['x-rapidapi-user'];
     
-    // Validate required headers
     if (!proxySecret || !user) {
         return res.status(401).json({
             success: false,
@@ -11,9 +9,15 @@ const rapidApiAuth = (req, res, next) => {
         });
     }
 
-    // In production, you would validate against your RapidAPI secret
-    // For now, we'll just log and proceed
-    console.log(`RapidAPI request from: ${user}`);
+    // Validate against environment variable
+    if (proxySecret !== process.env.RAPIDAPI_SECRET) {
+        return res.status(401).json({
+            success: false,
+            error: 'Invalid RapidAPI proxy secret'
+        });
+    }
+
+    console.log(`Authorized RapidAPI request from: ${user}`);
     next();
 };
 

@@ -1,26 +1,18 @@
 require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
-const youtubedl = require('youtube-dl-exec');
+const ytdl = require('ytdl-core');
 const { promises: fs } = require("fs");
 const path = require("path");
-const { execFile } = require('child_process');
-const { promisify } = require('util');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const axios = require('axios');
 const rapidApiAuth = require('./middleware/auth');
 
-const execFileAsync = promisify(execFile);
 const app = express();
 app.use(cors());
-
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
 fs.mkdir(tempDir, { recursive: true }).catch(console.error);
-
-// Get the absolute path to yt-dlp executable
-const ytDlpPath = require('youtube-dl-exec').path;
 
 // Function to call OpenRouter API
 async function callAIModel(messages, useDeepSeek = true) {
@@ -86,23 +78,23 @@ async function callAIModel(messages, useDeepSeek = true) {
     throw new Error('Failed to get response after maximum retries');
 }
 
-// Helper function to execute yt-dlp commands
-async function executeYtDlp(url, options) {
-    const args = [url];
-    
-    // Convert options object to command line arguments
-    Object.entries(options).forEach(([key, value]) => {
-        const argKey = '--' + key.replace(/([A-Z])/g, '-$1').toLowerCase();
-        if (value === true) {
-            args.push(argKey);
-        } else if (value !== false) {
-            args.push(argKey, value.toString());
-        }
-    });
+// Helper function to get video info
+async function getVideoInfo(url) {
+    return ytdl.getInfo(url);
+}
 
-    const { stdout, stderr } = await execFileAsync(ytDlpPath, args);
-    if (stderr) console.error('[yt-dlp]', stderr.trim());
-    return stdout;
+// Helper function to get video transcript
+async function getVideoTranscript(url, lang = 'tr') {
+    const info = await ytdl.getInfo(url);
+    const tracks = info.player_response.captions.playerCaptionsTracklistRenderer.captionTracks;
+    
+    const track = tracks.find(t => t.languageCode === lang);
+    if (!track) {
+        throw new Error(`No subtitles available for language: ${lang}`);
+    }
+    
+    const transcriptResponse = await axios.get(track.baseUrl);
+    return transcriptResponse.data;
 }
 
 
@@ -126,21 +118,14 @@ app.get("/info", async (req, res) => {
     }
 
     try {
-        const stdout = await executeYtDlp(url, {
-            dumpSingleJson: true,
-            noCheckCertificates: true,
-            noWarnings: true,
-            preferFreeFormats: true
-        });
-
-        const info = JSON.parse(stdout);
+        const info = await getVideoInfo(url);
         res.send({
-            title: info.title,
-            thumbnail: info.thumbnail,
-            video_id: info.id,
-            channel_id: info.channel_id,
-            channel_name: info.uploader,
-            post_date: info.upload_date
+            title: info.videoDetails.title,
+            thumbnail: info.videoDetails.thumbnails[0].url,
+            video_id: info.videoDetails.videoId,
+            channel_id: info.videoDetails.channelId,
+            channel_name: info.videoDetails.author.name,
+            post_date: new Date(parseInt(info.videoDetails.publishDate)).toISOString()
         });
     } catch (error) {
         console.error("Error:", error);
@@ -305,61 +290,18 @@ app.get("/transcript", async (req, res) => {
     }
 
     try {
-        // Get video info with all available subtitle formats
-        const videoData = await executeYtDlp(url, {
-            dumpSingleJson: true,
-            skipDownload: true,
-            writeSubs: true,
-            writeAutoSubs: true,
-            noCheckCertificates: true,
-            noWarnings: true
-        });
-
-        const info = JSON.parse(videoData);
-        const subtitles = info.subtitles || {};
-        const autoSubs = info.automatic_captions || {};
-        const availableSubs = { ...subtitles, ...autoSubs };
-
-        if (!Object.keys(availableSubs).includes(lang)) {
-            return res.status(400).json({
-                success: false,
-                error: `No subtitles available for language: ${lang}. Available languages: ${Object.keys(availableSubs).join(', ')}`
-            });
+        const info = await getVideoInfo(url);
+        const transcriptXml = await getVideoTranscript(url, lang);
+        
+        // Parse XML transcript
+        const lines = transcriptXml.match(/<text start="[^"]+" dur="[^"]+">([^<]+)<\/text>/g);
+        if (!lines) {
+            throw new Error('No transcript available');
         }
-
-        // Download subtitles using yt-dlp and capture the output
-        const subtitleContent = await executeYtDlp(url, {
-            skipDownload: true,
-            writeSubs: true,
-            writeAutoSubs: true,
-            subLang: lang,
-            print: '%\(subtitles\.' + lang + '\.0\.ext\)s:%\(subtitles\.' + lang + '\.0\.data\)s',
-            noCheckCertificates: true,
-            noWarnings: true
+        
+        const subtitleLines = lines.map(line => {
+            return line.replace(/<text[^>]*>/, '').replace(/<\/text>/, '');
         });
-
-        // Parse the subtitle content
-        const [format, ...contentParts] = subtitleContent.split(':');
-        const content = contentParts.join(':').trim();
-
-        // For VTT format, we need to parse the content
-        let subtitleLines = [];
-        if (format.toLowerCase() === 'vtt') {
-            subtitleLines = content
-                .split('\n')
-                .filter(line => 
-                    line.trim() && 
-                    !line.includes('-->') && 
-                    !line.match(/^WEBVTT/) &&
-                    !line.match(/^Kind:/i) &&
-                    !line.match(/^Language:/i) &&
-                    !line.match(/^\d+$/) &&
-                    !line.match(/^\d{2}:\d{2}/)
-                );
-        } else {
-            // For other formats, just use the content as is
-            subtitleLines = content.split('\n');
-        }
 
         // Basic cleanup of the text
         const cleanedLines = subtitleLines.map(line => 
@@ -444,16 +386,16 @@ app.get("/transcript", async (req, res) => {
         // Format the response
         res.json({
             success: true,
-            title: info.title,
+            title: info.videoDetails.title,
             language: lang,
             transcript: finalTranscript,
             ai_notes: aiNotes,
             isProcessed: !skipAI,
             processor: useDeepSeek ? 'deepseek' : 'qwen',
-            video_id: info.id,
-            channel_id: info.channel_id,
-            channel_name: info.uploader,
-            post_date: info.upload_date
+            video_id: info.videoDetails.videoId,
+            channel_id: info.videoDetails.channelId,
+            channel_name: info.videoDetails.author.name,
+            post_date: new Date(parseInt(info.videoDetails.publishDate)).toISOString()
         });
 
     } catch (error) {

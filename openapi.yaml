@@ -12,6 +12,28 @@ servers:
   - url: https://youtube-multi-api.vercel.app
     description: Production server
 paths:
+  /ping:
+    get:
+      summary: Health check endpoint
+      description: No authentication required
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2025-06-01T16:00:00.000Z"
+                  version:
+                    type: string
+                    example: "1.0.0"
   /info:
     get:
       summary: Get video metadata

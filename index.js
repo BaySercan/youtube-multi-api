@@ -405,10 +405,10 @@ app.get("/transcript", async (req, res) => {
                 
                 // After getting finalResponse, split transcript and notes if needed
                 let transcriptText = finalResponse.choices[0].message.content.trim();
-                if (transcriptText.includes('NOT:')) {
-                    const [main, ...notes] = transcriptText.split(/\n?NOT:/);
+                if (transcriptText.includes('NOTE:')) {
+                    const [main, ...notes] = transcriptText.split(/\n?NOTE:/);
                     transcriptText = main.trim();
-                    aiNotes = notes.join('NOT:').trim();
+                    aiNotes = notes.join('NOTE:').trim();
                 }
                 finalTranscript = transcriptText;
 

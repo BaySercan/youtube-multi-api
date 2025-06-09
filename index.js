@@ -9,6 +9,23 @@ const rapidApiAuth = require('./middleware/auth');
 const ytdl = require('youtube-dl-exec');
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
+// Helper function to validate cookies file
+async function validateCookiesFile() {
+    try {
+        await fs.access('cookies.txt');
+        const stats = await fs.stat('cookies.txt');
+        if (stats.size < 100) {
+            console.warn('WARNING: cookies.txt file is too small (less than 100 bytes). YouTube may still block requests.');
+        }
+        return true;
+    } catch (error) {
+        console.error('ERROR: cookies.txt file is missing or inaccessible. YouTube may block requests.');
+        console.error('To fix this, export your YouTube cookies and save them as cookies.txt in the project root.');
+        console.error('See: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies');
+        return false;
+    }
+}
+
 const app = express();
 app.use(cors());
 
@@ -92,6 +109,8 @@ async function getVideoInfo(url, retries = 3) {
     const { promisify } = require('util');
     const execAsync = promisify(exec);
     
+    const hasValidCookies = await validateCookiesFile();
+    
     for (let i = 0; i < retries; i++) {
         try {
             console.log(`Fetching video info for: ${fixedUrl}`);
@@ -102,11 +121,21 @@ async function getVideoInfo(url, retries = 3) {
                 '--dump-json',
                 '--no-warnings',
                 '--no-check-certificates',
-                '--cookies', 'cookies.txt',
                 '--user-agent', USER_AGENT,
                 '--prefer-free-formats',
+                '--force-ipv4',
+                '--socket-timeout', '10',
+                '--source-address', '0.0.0.0',
                 fixedUrl
             ];
+            
+            // Add cookies only if valid cookies file exists
+            if (hasValidCookies) {
+                args.push('--cookies', 'cookies.txt');
+                console.log('Using cookies.txt for authentication');
+            } else {
+                console.log('Proceeding without cookies - YouTube may block requests');
+            }
             
             const { stdout, stderr } = await new Promise((resolve, reject) => {
                 const child = spawn(ytDlpPath, args);
@@ -238,16 +267,21 @@ app.get("/mp3", async (req, res) => {
 
         // Use youtube-dl-exec to stream the audio (platform-independent)
         const ytDlpPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
+        const hasValidCookies = await validateCookiesFile();
         const args = [
             '--extract-audio',
             '--audio-format', 'mp3',
             '--no-check-certificates',
             '--no-warnings',
-            '--cookies', 'cookies.txt',
             '--user-agent', `"${USER_AGENT}"`,
             '-o', '-',
             videoUrl
         ];
+        
+        if (hasValidCookies) {
+            args.push('--cookies', 'cookies.txt');
+            console.log('Using cookies.txt for MP3 download');
+        }
         
         const child = spawn(`"${ytDlpPath}"`, args, { shell: true });
         
@@ -299,15 +333,20 @@ app.get("/mp4", async (req, res) => {
 
         // Use youtube-dl-exec to stream the video (platform-independent)
         const ytDlpPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
+        const hasValidCookies = await validateCookiesFile();
         const args = [
             '--format', 'mp4',
             '--no-check-certificates',
             '--no-warnings',
-            '--cookies', 'cookies.txt',
             '--user-agent', `"${USER_AGENT}"`,
             '-o', '-',
             videoUrl
         ];
+        
+        if (hasValidCookies) {
+            args.push('--cookies', 'cookies.txt');
+            console.log('Using cookies.txt for MP4 download');
+        }
         
         const child = spawn(`"${ytDlpPath}"`, args, { shell: true });
         

@@ -7,7 +7,7 @@ const path = require("path");
 const axios = require('axios');
 const rapidApiAuth = require('./middleware/auth');
 const ytdl = require('youtube-dl-exec');
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
 const app = express();
 app.use(cors());
@@ -96,22 +96,35 @@ async function getVideoInfo(url, retries = 3) {
         try {
             console.log(`Fetching video info for: ${fixedUrl}`);
             
-            // Get the absolute path to yt-dlp executable (compatible with current youtube-dl-exec version)
-            const binPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
-            const quotedPath = `"${binPath}"`;
+            // Use spawn directly for better path handling
+            const ytDlpPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
+            const args = [
+                '--dump-json',
+                '--no-warnings',
+                '--no-check-certificates',
+                '--cookies', 'cookies.txt',
+                '--user-agent', USER_AGENT,
+                '--prefer-free-formats',
+                fixedUrl
+            ];
             
-            // Build command with proper quoting
-                const command = [
-                    quotedPath,
-                    '--dump-json',
-                    '--no-warnings',
-                    '--no-check-certificates',
-                    '--prefer-free-formats',
-                    `--user-agent "${USER_AGENT}"`,
-                    `"${fixedUrl}"`
-                ].join(' ');
-            
-            const { stdout, stderr } = await execAsync(command, { shell: true });
+            const { stdout, stderr } = await new Promise((resolve, reject) => {
+                const child = spawn(ytDlpPath, args);
+                let stdout = '';
+                let stderr = '';
+                
+                child.stdout.on('data', data => stdout += data);
+                child.stderr.on('data', data => stderr += data);
+                
+                child.on('error', reject);
+                child.on('close', code => {
+                    if (code === 0) {
+                        resolve({ stdout, stderr });
+                    } else {
+                        reject(new Error(`yt-dlp exited with code ${code}: ${stderr}`));
+                    }
+                });
+            });
             
             if (stderr) {
                 console.error(`yt-dlp stderr: ${stderr}`);
@@ -230,11 +243,13 @@ app.get("/mp3", async (req, res) => {
             '--audio-format', 'mp3',
             '--no-check-certificates',
             '--no-warnings',
+            '--cookies', 'cookies.txt',
+            '--user-agent', `"${USER_AGENT}"`,
             '-o', '-',
             videoUrl
         ];
         
-        const child = spawn(ytDlpPath, args);
+        const child = spawn(`"${ytDlpPath}"`, args, { shell: true });
         
         child.stdout.pipe(res);
         
@@ -288,11 +303,13 @@ app.get("/mp4", async (req, res) => {
             '--format', 'mp4',
             '--no-check-certificates',
             '--no-warnings',
+            '--cookies', 'cookies.txt',
+            '--user-agent', `"${USER_AGENT}"`,
             '-o', '-',
             videoUrl
         ];
         
-        const child = spawn(ytDlpPath, args);
+        const child = spawn(`"${ytDlpPath}"`, args, { shell: true });
         
         child.stdout.pipe(res);
         
@@ -359,6 +376,7 @@ app.get("/transcript", async (req, res) => {
 
         let finalTranscript;
         let aiNotes = null;
+        let processorUsed = useDeepSeek ? 'deepseek' : 'qwen';
 
         if (!skipAI) {
             try {
@@ -387,6 +405,11 @@ app.get("/transcript", async (req, res) => {
 
                 // First pass - clean up and format
                 const firstResponse = await callAIModel(messages, useDeepSeek);
+                
+                // Update processor if we switched to backup model
+                if (firstResponse.modelUsed === 'qwen') {
+                    processorUsed = 'qwen';
+                }
                 
                 // Second pass - final cleanup for duplicates
                 const cleanupMessages = [
@@ -436,7 +459,7 @@ app.get("/transcript", async (req, res) => {
             transcript: finalTranscript,
             ai_notes: aiNotes,
             isProcessed: !skipAI,
-            processor: useDeepSeek ? 'deepseek' : 'qwen',
+            processor: processorUsed,
             video_id: info.id,
             channel_id: info.channel_id,
             channel_name: info.channel,

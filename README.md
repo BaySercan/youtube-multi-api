@@ -83,11 +83,11 @@ Get video transcript
   "transcript": "Cleaned transcript text",
   "ai_notes": "Optional AI processing notes",
   "isProcessed": true,
-  "processor": "deepseek",
+  "processor": "deepseek | qwen", // Reflects actual model used
   "video_id": "YouTube video ID",
   "channel_id": "YouTube channel ID",
   "channel_name": "Channel name",
-  "post_date": "Upload date (YYYYMMDD)"
+  "post_date": "Upload date in ISO format"
 }
 ```
 
@@ -108,5 +108,6 @@ curl "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w
 - cors
 - youtube-dl-exec
 - dotenv
-- node-fetch
 - axios
+- play-dl
+- child_process

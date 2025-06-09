@@ -82,28 +82,34 @@ async function callAIModel(messages, useDeepSeek = true) {
 
 // Helper function to get video info with retry
 async function getVideoInfo(url, retries = 3) {
+    // Fix common URL formatting issues
+    let fixedUrl = url;
+    if (url.includes('/watch/v=')) {
+        fixedUrl = url.replace('/watch/v=', '/watch?v=');
+    }
+    
     const { exec } = require('child_process');
     const { promisify } = require('util');
     const execAsync = promisify(exec);
     
     for (let i = 0; i < retries; i++) {
         try {
-            console.log(`Fetching video info for: ${url}`);
+            console.log(`Fetching video info for: ${fixedUrl}`);
             
             // Get the absolute path to yt-dlp executable (compatible with current youtube-dl-exec version)
             const binPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
             const quotedPath = `"${binPath}"`;
             
             // Build command with proper quoting
-            const command = [
-                quotedPath,
-                '--dump-json',
-                '--no-warnings',
-                '--no-check-certificates',
-                '--prefer-free-formats',
-                `--user-agent "${USER_AGENT}"`,
-                `"${url}"`
-            ].join(' ');
+                const command = [
+                    quotedPath,
+                    '--dump-json',
+                    '--no-warnings',
+                    '--no-check-certificates',
+                    '--prefer-free-formats',
+                    `--user-agent "${USER_AGENT}"`,
+                    `"${fixedUrl}"`
+                ].join(' ');
             
             const { stdout, stderr } = await execAsync(command, { shell: true });
             
@@ -448,6 +454,16 @@ app.get("/transcript", async (req, res) => {
     }
 });
 
-app.listen(3500, () => {
-    console.log("Server on PORT: 3500");
-});
+// Get port from environment or use default
+const PORT = process.env.PORT || 3500;
+
+// Bind to 0.0.0.0 in production, use default binding in development
+if (process.env.NODE_ENV === 'production') {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running in production mode on PORT: ${PORT}`);
+    });
+} else {
+    app.listen(PORT, () => {
+        console.log(`Server running in development mode on PORT: ${PORT}`);
+    });
+}

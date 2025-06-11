@@ -145,7 +145,6 @@ async function getVideoInfo(url, retries = 3) {
                 '--no-warnings',
                 '--no-check-certificates',
                 '--user-agent', USER_AGENT,
-                '--prefer-free-formats',
                 '--force-ipv4',
                 '--socket-timeout', '10',
                 '--source-address', '0.0.0.0',

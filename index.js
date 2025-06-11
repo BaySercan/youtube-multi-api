@@ -26,11 +26,21 @@ async function validateCookiesFile() {
         }
         
         // Check for YouTube-specific cookies
-        if (!content.includes('youtube.com') && !content.includes('.youtube.com')) {
+        const hasYoutubeCookies = content.includes('youtube.com') || content.includes('.youtube.com');
+        if (!hasYoutubeCookies) {
             console.warn('WARNING: cookies.txt does not contain YouTube domain cookies. Export cookies specifically for YouTube.');
         }
         
-        return true;
+        // Check for authentication cookies
+        const hasAuthCookies = content.includes('LOGIN_INFO') ||
+                               content.includes('SID') ||
+                               content.includes('HSID') ||
+                               content.includes('SSID');
+        if (!hasAuthCookies) {
+            console.warn('WARNING: cookies.txt is missing authentication cookies. Make sure you export cookies while logged into YouTube.');
+        }
+        
+        return hasYoutubeCookies && hasAuthCookies;
     } catch (error) {
         console.error('ERROR: cookies.txt file is missing or inaccessible. YouTube may block requests.');
         console.error('To fix this, export your YouTube cookies and save them as cookies.txt in the project root.');
@@ -183,11 +193,21 @@ async function getVideoInfo(url, retries = 3) {
             // Handle authentication errors specifically
             if (error.message.includes('Sign in to confirm you’re not a bot')) {
                 console.error('\nAUTHENTICATION REQUIRED:');
-                console.error('YouTube is requiring cookie authentication to prevent botting.');
-                console.error('Please export your YouTube cookies using one of these methods:');
+                
+                if (hasValidCookies) {
+                    console.error('The provided cookies.txt file exists but YouTube rejected it.');
+                    console.error('Possible reasons:');
+                    console.error('1. Cookies are expired - export fresh cookies from YouTube');
+                    console.error('2. Cookies are from wrong domain - ensure they include .youtube.com');
+                    console.error('3. Cookies file format is invalid - must be Netscape format');
+                } else {
+                    console.error('No valid cookies.txt file found.');
+                }
+                
+                console.error('Export fresh YouTube cookies:');
                 console.error('1. Use a browser extension: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp');
                 console.error('2. Export manually: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies');
-                console.error('Then save the cookies as cookies.txt in the project root directory.');
+                console.error('Save as cookies.txt in the project root directory.');
             }
             
             if (i === retries - 1) {

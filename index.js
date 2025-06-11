@@ -14,9 +14,22 @@ async function validateCookiesFile() {
     try {
         await fs.access('cookies.txt');
         const stats = await fs.stat('cookies.txt');
+        const content = await fs.readFile('cookies.txt', 'utf8');
+        
+        // Basic validation for Netscape cookie format
+        if (!content.includes('# Netscape HTTP Cookie File')) {
+            console.warn('WARNING: cookies.txt does not appear to be in Netscape format. YouTube may reject it.');
+        }
+        
         if (stats.size < 100) {
             console.warn('WARNING: cookies.txt file is too small (less than 100 bytes). YouTube may still block requests.');
         }
+        
+        // Check for YouTube-specific cookies
+        if (!content.includes('youtube.com') && !content.includes('.youtube.com')) {
+            console.warn('WARNING: cookies.txt does not contain YouTube domain cookies. Export cookies specifically for YouTube.');
+        }
+        
         return true;
     } catch (error) {
         console.error('ERROR: cookies.txt file is missing or inaccessible. YouTube may block requests.');
@@ -131,8 +144,10 @@ async function getVideoInfo(url, retries = 3) {
             
             // Add cookies only if valid cookies file exists
             if (hasValidCookies) {
-                args.push('--cookies', 'cookies.txt');
-                console.log('Using cookies.txt for authentication');
+                // Use absolute path to cookies.txt to ensure yt-dlp can find it
+                const cookiesPath = path.resolve(__dirname, 'cookies.txt');
+                args.push('--cookies', cookiesPath);
+                console.log(`Using cookies from ${cookiesPath} for authentication`);
             } else {
                 console.log('Proceeding without cookies - YouTube may block requests');
             }
@@ -164,6 +179,16 @@ async function getVideoInfo(url, retries = 3) {
             return info;
         } catch (error) {
             console.error(`Error getting video info (attempt ${i+1}/${retries}):`, error);
+            
+            // Handle authentication errors specifically
+            if (error.message.includes('Sign in to confirm you’re not a bot')) {
+                console.error('\nAUTHENTICATION REQUIRED:');
+                console.error('YouTube is requiring cookie authentication to prevent botting.');
+                console.error('Please export your YouTube cookies using one of these methods:');
+                console.error('1. Use a browser extension: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp');
+                console.error('2. Export manually: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies');
+                console.error('Then save the cookies as cookies.txt in the project root directory.');
+            }
             
             if (i === retries - 1) {
                 throw error;

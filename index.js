@@ -250,6 +250,67 @@ app.get("/ping", (req, res) => {
     });
 });
 
+// Cookie validation endpoint (no authentication required)
+app.get("/validate-cookies", async (req, res) => {
+    try {
+        const cookiesPath = path.resolve(__dirname, 'cookies.txt');
+        const exists = await fs.access(cookiesPath).then(() => true).catch(() => false);
+        
+        if (!exists) {
+            return res.status(404).json({
+                valid: false,
+                message: 'cookies.txt file not found',
+                path: cookiesPath,
+                requiredCookies: ['LOGIN_INFO', 'SID', 'HSID', 'SSID']
+            });
+        }
+        
+        const content = await fs.readFile(cookiesPath, 'utf8');
+        const cookies = content.split('\n')
+            .filter(line => line.trim() && !line.startsWith('#'))
+            .map(line => {
+                const parts = line.split('\t');
+                return {
+                    domain: parts[0],
+                    includeSubdomains: parts[1] === 'TRUE',
+                    path: parts[2],
+                    secure: parts[3] === 'TRUE',
+                    expiration: parts[4],
+                    name: parts[5],
+                    value: parts[6]
+                };
+            });
+            
+        const youtubeCookies = cookies.filter(c =>
+            c.domain.includes('youtube.com') || c.domain.includes('.youtube.com')
+        );
+        
+        const authCookies = youtubeCookies.filter(c =>
+            ['LOGIN_INFO', 'SID', 'HSID', 'SSID'].includes(c.name)
+        );
+        
+        const isValid = youtubeCookies.length > 0 && authCookies.length > 0;
+        
+        res.json({
+            valid: isValid,
+            path: cookiesPath,
+            fileSize: content.length,
+            youtubeCookiesCount: youtubeCookies.length,
+            authCookiesFound: authCookies.map(c => c.name),
+            requiredCookies: ['LOGIN_INFO', 'SID', 'HSID', 'SSID'],
+            validationMessage: isValid ?
+                'Valid cookies.txt file with authentication cookies' :
+                'Missing required YouTube authentication cookies'
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            valid: false,
+            error: error.message
+        });
+    }
+});
+
 // Apply RapidAPI authentication middleware to all routes except /ping
 app.use(rapidApiAuth);
 

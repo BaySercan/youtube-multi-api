@@ -58,8 +58,9 @@ fs.mkdir(tempDir, { recursive: true }).catch(console.error);
 
 // Function to call OpenRouter API
 async function callAIModel(messages, useDeepSeek = true) {
-    if (!process.env.OPENROUTER_API_KEY) {
-        throw new Error('OPENROUTER_API_KEY environment variable is not set');
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey || apiKey.trim() === '') {
+        throw new Error('OPENROUTER_API_KEY environment variable is not set or empty');
     }
     
     const model = useDeepSeek ? 'deepseek/deepseek-r1-0528:free' : 'qwen/qwen3-14b:free';
@@ -139,12 +140,17 @@ async function getVideoInfo(url, retries = 3) {
             console.log(`Fetching video info for: ${fixedUrl}`);
             
             // Use spawn directly for better path handling
+            // Get the path to yt-dlp executable and quote it for Windows
             const ytDlpPath = require.resolve('youtube-dl-exec/bin/yt-dlp' + (process.platform === 'win32' ? '.exe' : ''));
+            const quotedPath = process.platform === 'win32' ? `"${ytDlpPath}"` : ytDlpPath;
+            
             const args = [
                 '--dump-json',
                 '--no-warnings',
                 '--no-check-certificates',
-                '--user-agent', USER_AGENT,
+                '--ignore-errors',   // Continue even if there are errors (e.g., format not available)
+                '--skip-download',  // Explicitly skip download attempts
+                `--user-agent="${USER_AGENT}"`,
                 fixedUrl
             ];
             
@@ -152,32 +158,47 @@ async function getVideoInfo(url, retries = 3) {
             if (hasValidCookies) {
                 // Use absolute path to cookies.txt to ensure yt-dlp can find it
                 const cookiesPath = path.resolve(__dirname, 'cookies.txt');
-                args.push('--cookies', cookiesPath);
+                // Properly quote the path to handle spaces
+                args.push('--cookies', `"${cookiesPath}"`);
                 console.log(`Using cookies from ${cookiesPath} for authentication`);
             } else {
                 console.log('Proceeding without cookies - YouTube may block requests');
             }
             
+            // Use spawn instead of execAsync to avoid shell parsing issues
             const { stdout, stderr } = await new Promise((resolve, reject) => {
-                const child = spawn(ytDlpPath, args);
-                let stdout = '';
-                let stderr = '';
+                const child = spawn(quotedPath, args, { shell: true });
+                let stdoutData = '';
+                let stderrData = '';
                 
-                child.stdout.on('data', data => stdout += data);
-                child.stderr.on('data', data => stderr += data);
+                child.stdout.on('data', data => stdoutData += data);
+                child.stderr.on('data', data => stderrData += data);
                 
                 child.on('error', reject);
                 child.on('close', code => {
+                    // Try to parse JSON even if there's an error code
+                    if (stdoutData.trim() !== '') {
+                        try {
+                            // Try to parse the output as JSON
+                            JSON.parse(stdoutData);
+                            resolve({ stdout: stdoutData, stderr: stderrData });
+                            return;
+                        } catch (e) {
+                            // Not valid JSON, continue to error handling
+                        }
+                    }
+                    
                     if (code === 0) {
-                        resolve({ stdout, stderr });
+                        resolve({ stdout: stdoutData, stderr: stderrData });
                     } else {
-                        reject(new Error(`yt-dlp exited with code ${code}: ${stderr}`));
+                        reject(new Error(`yt-dlp exited with code ${code}: ${stderrData}`));
                     }
                 });
             });
             
+            console.log('yt-dlp stdout:', stdout.substring(0, 500) + (stdout.length > 500 ? '...' : ''));
             if (stderr) {
-                console.error(`yt-dlp stderr: ${stderr}`);
+                console.warn('yt-dlp stderr:', stderr);
             }
             
             const info = JSON.parse(stdout);
@@ -381,11 +402,13 @@ app.get("/mp3", async (req, res) => {
         ];
         
         if (hasValidCookies) {
-            args.push('--cookies', 'cookies.txt');
+            const cookiesPath = path.resolve(__dirname, 'cookies.txt');
+            args.push('--cookies', `"${cookiesPath}"`);
             console.log('Using cookies.txt for MP3 download');
         }
         
-        const child = spawn(`"${ytDlpPath}"`, args, { shell: true });
+        const quotedPath = process.platform === 'win32' ? `"${ytDlpPath}"` : ytDlpPath;
+        const child = spawn(quotedPath, args, { shell: true });
         
         child.stdout.pipe(res);
         
@@ -446,11 +469,13 @@ app.get("/mp4", async (req, res) => {
         ];
         
         if (hasValidCookies) {
-            args.push('--cookies', 'cookies.txt');
+            const cookiesPath = path.resolve(__dirname, 'cookies.txt');
+            args.push('--cookies', `"${cookiesPath}"`);
             console.log('Using cookies.txt for MP4 download');
         }
         
-        const child = spawn(`"${ytDlpPath}"`, args, { shell: true });
+        const quotedPath = process.platform === 'win32' ? `"${ytDlpPath}"` : ytDlpPath;
+        const child = spawn(quotedPath, args, { shell: true });
         
         child.stdout.pipe(res);
         
@@ -496,15 +521,23 @@ app.get("/transcript", async (req, res) => {
         const info = await getVideoInfo(videoUrl);
         const transcriptXml = await getVideoTranscript(videoUrl, lang);
         
-        // Parse XML transcript
-        const lines = transcriptXml.match(/<text start="[^"]+" dur="[^"]+">([^<]+)<\/text>/g);
-        if (!lines) {
-            throw new Error('No transcript available');
+        // Parse transcript (supports XML and WebVTT formats)
+        let subtitleLines = [];
+        if (transcriptXml.includes('<text')) {
+            // TTML/XML format
+            const lines = transcriptXml.match(/<text[^>]*>([^<]+)<\/text>/g) || [];
+            subtitleLines = lines.map(line => {
+                return line.replace(/<text[^>]*>/, '').replace(/<\/text>/, '');
+            });
+        } else if (transcriptXml.includes('WEBVTT')) {
+            // WebVTT format
+            subtitleLines = transcriptXml.split('\n')
+                .filter(line => line.trim() && !line.startsWith('WEBVTT') && 
+                        !line.startsWith('NOTE') && !line.includes('-->'))
+                .map(line => line.trim());
+        } else {
+            throw new Error('Unsupported transcript format');
         }
-        
-        const subtitleLines = lines.map(line => {
-            return line.replace(/<text[^>]*>/, '').replace(/<\/text>/, '');
-        });
 
         // Basic cleanup of the text
         const cleanedLines = subtitleLines.map(line => 
@@ -610,10 +643,10 @@ app.get("/transcript", async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Transcript Error:", error);
         res.status(400).json({
             success: false,
-            error: "Could not fetch transcript. Video might not have subtitles in the requested language or they are disabled."
+            error: `Could not fetch transcript: ${error.message}. Video might not have subtitles in the requested language or they are disabled.`
         });
     }
 });

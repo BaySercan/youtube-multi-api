@@ -400,7 +400,7 @@ app.get("/transcript", async (req, res) => {
                         1. Detect the language of the text and do not attempt to translate it
                         2. Find and remove any remaining repeated sentences or phrases (only those that are exact or very similar)
                         3. DO NOT change the order, structure, or meaning of the sentences
-                        4. Only remove repetitions, do not add or remove any new information. Remove \n characters as needed.
+                        4. Only remove repetitions, do not add or remove any new information. Remove "\n" character combinations.
                         5. STRICTLY PRESERVE the main idea, details, and original form of the sentences
                         6. RETURN ONLY THE TRANSCRIPT as output. Do NOT add explanations, summaries, process notes, or any other information.
                         7. If you must add an explanation or process note, start it on a separate line with 'NOTE:'. But if possible, return only the transcript.`

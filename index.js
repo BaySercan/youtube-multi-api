@@ -177,8 +177,7 @@ async function getVideoTranscript(url, lang = 'tr') {
     return transcriptResponse.data;
 }
 
-
-// --- Routes (no logic changes, but they now rely on the fixed functions) ---
+// Routes
 
 app.get("/ping", (req, res) => {
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
@@ -401,7 +400,7 @@ app.get("/transcript", async (req, res) => {
                         1. Detect the language of the text and do not attempt to translate it
                         2. Find and remove any remaining repeated sentences or phrases (only those that are exact or very similar)
                         3. DO NOT change the order, structure, or meaning of the sentences
-                        4. Only remove repetitions, do not add or remove any new information
+                        4. Only remove repetitions, do not add or remove any new information. Remove \n characters as needed.
                         5. STRICTLY PRESERVE the main idea, details, and original form of the sentences
                         6. RETURN ONLY THE TRANSCRIPT as output. Do NOT add explanations, summaries, process notes, or any other information.
                         7. If you must add an explanation or process note, start it on a separate line with 'NOTE:'. But if possible, return only the transcript.`
@@ -433,6 +432,7 @@ app.get("/transcript", async (req, res) => {
             finalTranscript = cleanedLines.join(' ');
         }
 
+        const isProcessed = !skipAI && finalTranscript && finalTranscript.trim().length > 0;
         // Format the response
         res.json({
             success: true,
@@ -440,7 +440,7 @@ app.get("/transcript", async (req, res) => {
             language: lang,
             transcript: finalTranscript,
             ai_notes: aiNotes,
-            isProcessed: !skipAI,
+            isProcessed: isProcessed,
             processor: processorUsed,
             video_id: info.id,
             channel_id: info.channel_id,

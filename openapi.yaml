@@ -9,8 +9,19 @@ info:
 servers:
   - url: http://localhost:3500
     description: Local development server
-  - url: https://youtube-multi-api.vercel.app
-    description: Production server
+  - url: https://youtube-multi-api.onrender.com
+    description: Production server (Render.com)
+    
+security:
+  - RapidAPI: []
+    
+components:
+  securitySchemes:
+    RapidAPI:
+      type: apiKey
+      name: X-RapidAPI-Proxy-Secret
+      in: header
+      description: RapidAPI authentication token
 paths:
   /ping:
     get:
@@ -38,6 +49,8 @@ paths:
     get:
       summary: Get video metadata
       description: Retrieve metadata about a YouTube video
+      security:
+        - RapidAPI: []
       parameters:
         - in: query
           name: url
@@ -78,6 +91,8 @@ paths:
     get:
       summary: Download video as MP3
       description: Download a YouTube video as an MP3 audio file
+      security:
+        - RapidAPI: []
       parameters:
         - in: query
           name: url
@@ -99,6 +114,8 @@ paths:
     get:
       summary: Download video as MP4
       description: Download a YouTube video as an MP4 video file
+      security:
+        - RapidAPI: []
       parameters:
         - in: query
           name: url
@@ -120,6 +137,8 @@ paths:
     get:
       summary: Get video transcript
       description: Retrieve AI-processed video transcript
+      security:
+        - RapidAPI: []
       parameters:
         - in: query
           name: url
@@ -189,3 +208,98 @@ paths:
                 post_date: "20230101"
         '400':
           description: Invalid request or no subtitles available
+          
+  /progress/{id}:
+    get:
+      summary: Get processing status
+      description: Retrieve the current status of a processing job
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Processing job ID
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  progress:
+                    type: number
+                  video_id:
+                    type: string
+                  video_title:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  lastUpdated:
+                    type: string
+                    format: date-time
+        '404':
+          description: Processing ID not found
+          
+  /result/{id}:
+    get:
+      summary: Get processing result
+      description: Retrieve the final result of a completed processing job
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Processing job ID
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  title:
+                    type: string
+                  language:
+                    type: string
+                  transcript:
+                    type: string
+                  ai_notes:
+                    type: string
+                  isProcessed:
+                    type: boolean
+                  processor:
+                    type: string
+                  video_id:
+                    type: string
+                  channel_id:
+                    type: string
+                  channel_name:
+                    type: string
+                  post_date:
+                    type: string
+        '202':
+          description: Processing not complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  status:
+                    type: string
+                  progress:
+                    type: number
+        '404':
+          description: Processing ID not found

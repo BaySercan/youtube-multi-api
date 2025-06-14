@@ -7,6 +7,8 @@ const path = require("path");
 const axios = require('axios');
 const rapidApiAuth = require('./middleware/auth');
 const YTDlpWrap = require('yt-dlp-wrap').default;
+const PQueue = require('p-queue').default;
+const { v4: uuidv4 } = require('uuid');
 
 // Initialize yt-dlp-wrap
 let ytDlpWrap;
@@ -84,6 +86,20 @@ app.use(cors());
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
 fs.mkdir(tempDir, { recursive: true }).catch(console.error);
+
+// Initialize processing queue and cache
+const processingQueue = new PQueue({ concurrency: 2 });
+const processingCache = new Map();
+
+// Function to update processing status
+function updateProgress(processingId, progress, status) {
+  if (processingCache.has(processingId)) {
+    const job = processingCache.get(processingId);
+    job.progress = progress;
+    job.status = status;
+    job.lastUpdated = Date.now();
+  }
+}
 
 // Function to call OpenRouter API (no changes)
 async function callAIModel(messages, useDeepSeek = true) {
@@ -308,25 +324,42 @@ app.get("/mp4", async (req, res) => {
 });
 
 app.get("/transcript", async (req, res) => {
-    const { url, lang = 'tr' } = req.query;
-    const skipAI = req.query.skipAI === 'true';
-    const useDeepSeek = req.query.useDeepSeek !== 'false';
+  const { url, lang = 'tr' } = req.query;
+  const skipAI = req.query.skipAI === 'true';
+  const useDeepSeek = req.query.useDeepSeek !== 'false';
 
-    // Validate and normalize URL parameter
-    if (!url) {
-        return res.status(400).send("Missing url parameter");
-    }
-    
-    // Handle case where url might be an array (multiple params)
-    const videoUrl = Array.isArray(url) ? url[0] : url;
-    
-    if (typeof videoUrl !== 'string') {
-        return res.status(400).send("url parameter must be a string");
-    }
+  // Validate and normalize URL parameter
+  if (!url) {
+      return res.status(400).send("Missing url parameter");
+  }
+  
+  // Handle case where url might be an array (multiple params)
+  const videoUrl = Array.isArray(url) ? url[0] : url;
+  
+  if (typeof videoUrl !== 'string') {
+      return res.status(400).send("url parameter must be a string");
+  }
 
+  // Create processing job
+  const processingId = uuidv4();
+  const job = {
+    id: processingId,
+    status: 'queued',
+    progress: 0,
+    createdAt: Date.now(),
+    lastUpdated: Date.now(),
+    result: null
+  };
+  processingCache.set(processingId, job);
+
+  // Add to processing queue
+  processingQueue.add(async () => {
     try {
-        const info = await getVideoInfo(videoUrl);
-        const transcriptXml = await getVideoTranscript(videoUrl, lang);
+      updateProgress(processingId, 10, 'processing');
+      const info = await getVideoInfo(videoUrl);
+      
+      updateProgress(processingId, 30, 'processing');
+      const transcriptXml = await getVideoTranscript(videoUrl, lang);
         
         // Parse transcript (supports XML and WebVTT formats)
         let subtitleLines = [];
@@ -432,29 +465,69 @@ app.get("/transcript", async (req, res) => {
             finalTranscript = cleanedLines.join(' ');
         }
 
-        const isProcessed = !skipAI && finalTranscript && finalTranscript.trim().length > 0;
-        // Format the response
-        res.json({
-            success: true,
-            title: info.title,
-            language: lang,
-            transcript: finalTranscript,
-            ai_notes: aiNotes,
-            isProcessed: isProcessed,
-            processor: processorUsed,
-            video_id: info.id,
-            channel_id: info.channel_id,
-            channel_name: info.channel,
-            post_date: new Date(
-                `${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`
-            ).toISOString()
-        });
-
+      const isProcessed = !skipAI && finalTranscript && finalTranscript.trim().length > 0;
+      updateProgress(processingId, 100, 'completed');
+      job.result = {
+        success: true,
+        title: info.title,
+        language: lang,
+        transcript: finalTranscript,
+        ai_notes: aiNotes,
+        isProcessed: isProcessed,
+        processor: processorUsed,
+        video_id: info.id,
+        channel_id: info.channel_id,
+        channel_name: info.channel,
+        post_date: new Date(
+            `${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`
+        ).toISOString()
+      };
     } catch (error) {
-        console.error("Transcript Error:", error);
-        res.status(400).json({
-            success: false,
-            error: `Could not fetch transcript: ${error.message}. Video might not have subtitles in the requested language or they are disabled.`
-        });
+      console.error("Transcript Error:", error);
+      updateProgress(processingId, 100, 'failed');
+      job.result = {
+        success: false,
+        error: `Could not fetch transcript: ${error.message}. Video might not have subtitles in the requested language or they are disabled.`
+      };
     }
+  });
+
+  // Return processing ID immediately
+  res.status(202).json({ 
+    processingId,
+    message: "Processing started. Use /progress and /result endpoints to track and retrieve results.",
+    progressEndpoint: `/progress/${processingId}`,
+    resultEndpoint: `/result/${processingId}`
+  });
+});
+
+// New endpoint to get processing progress
+app.get("/progress/:id", (req, res) => {
+  const job = processingCache.get(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: "Processing ID not found" });
+  }
+  res.json({
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    createdAt: job.createdAt,
+    lastUpdated: job.lastUpdated
+  });
+});
+
+// New endpoint to get processing result
+app.get("/result/:id", (req, res) => {
+  const job = processingCache.get(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: "Processing ID not found" });
+  }
+  if (job.status !== 'completed') {
+    return res.status(202).json({
+      message: "Processing not complete",
+      status: job.status,
+      progress: job.progress
+    });
+  }
+  res.json(job.result);
 });

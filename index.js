@@ -239,11 +239,32 @@ app.get("/mp3", async (req, res) => {
     if (!url) return res.status(400).send("Missing url parameter");
     const videoUrl = Array.isArray(url) ? url[0] : url;
 
+    // Create processing job
+    const processingId = uuidv4();
+    const job = {
+      id: processingId,
+      status: 'queued',
+      progress: 0,
+      createdAt: Date.now(),
+      lastUpdated: Date.now(),
+      video_id: null,
+      video_title: null,
+      result: null,
+      type: 'mp3'
+    };
+    processingCache.set(processingId, job);
+
     try {
+        updateProgress(processingId, 10, 'processing');
         const info = await getVideoInfo(videoUrl);
+        updateProgress(processingId, 30, 'downloading', info.id, info.title);
+        
         const fileName = `${info.title.replace(/[^\w\s.-]/gi, '')}.mp3`;
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
         res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('X-Processing-Id', processingId);
+        res.setHeader('X-Video-Id', info.id);
+        res.setHeader('X-Video-Title', info.title);
 
         const args = [
             '--extract-audio',
@@ -270,7 +291,16 @@ app.get("/mp3", async (req, res) => {
         
         child.on('error', (err) => {
             console.error('Streaming error:', err);
+            updateProgress(processingId, 100, 'failed');
             if (!res.headersSent) res.status(500).send('Error streaming audio');
+        });
+        
+        child.on('close', (code) => {
+            if (code === 0) {
+                updateProgress(processingId, 100, 'completed');
+            } else {
+                updateProgress(processingId, 100, 'failed');
+            }
         });
 
     } catch (error) {
@@ -284,11 +314,32 @@ app.get("/mp4", async (req, res) => {
     if (!url) return res.status(400).send("Missing url parameter");
     const videoUrl = Array.isArray(url) ? url[0] : url;
 
+    // Create processing job
+    const processingId = uuidv4();
+    const job = {
+      id: processingId,
+      status: 'queued',
+      progress: 0,
+      createdAt: Date.now(),
+      lastUpdated: Date.now(),
+      video_id: null,
+      video_title: null,
+      result: null,
+      type: 'mp4'
+    };
+    processingCache.set(processingId, job);
+
     try {
+        updateProgress(processingId, 10, 'processing');
         const info = await getVideoInfo(videoUrl);
+        updateProgress(processingId, 30, 'downloading', info.id, info.title);
+        
         const fileName = `${info.title.replace(/[^\w\s.-]/gi, '')}.mp4`;
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
         res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('X-Processing-Id', processingId);
+        res.setHeader('X-Video-Id', info.id);
+        res.setHeader('X-Video-Title', info.title);
 
         const args = [
             '--format', 'mp4',
@@ -314,7 +365,16 @@ app.get("/mp4", async (req, res) => {
         
         child.on('error', (err) => {
             console.error('Streaming error:', err);
+            updateProgress(processingId, 100, 'failed');
             if (!res.headersSent) res.status(500).send('Error streaming video');
+        });
+        
+        child.on('close', (code) => {
+            if (code === 0) {
+                updateProgress(processingId, 100, 'completed');
+            } else {
+                updateProgress(processingId, 100, 'failed');
+            }
         });
 
     } catch (error) {
@@ -516,13 +576,23 @@ app.get("/progress/:id", (req, res) => {
   if (!job) {
     return res.status(404).json({ error: "Processing ID not found" });
   }
-  res.json({
+  const response = {
     id: job.id,
     status: job.status,
     progress: job.progress,
     createdAt: job.createdAt,
     lastUpdated: job.lastUpdated
-  });
+  };
+  
+  // Add video metadata if available
+  if (job.video_id) {
+    response.video_id = job.video_id;
+  }
+  if (job.video_title) {
+    response.video_title = job.video_title;
+  }
+  
+  res.json(response);
 });
 
 // New endpoint to get processing result

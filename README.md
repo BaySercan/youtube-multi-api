@@ -2,11 +2,14 @@
 
 REST API to download YouTube videos as MP3/MP4 files and get video transcripts. Built with Node.js, Express, and yt-dlp.
 
-## Features
-- Download YouTube videos as MP3 or MP4 files
-- Get video metadata (title, thumbnail, channel info)
-- Generate transcripts with AI-powered cleanup
-- Automatic cleanup of temporary files
+## Important Limitations
+- All processing results are temporary and immediately discarded after delivery
+- Files are streamed directly without server storage
+- Progress data is ephemeral and not persisted
+- Do not rely on long-term result availability
+
+## API Base URL
+`https://youtube-multi-api.onrender.com`
 
 ## Installation
 1. Clone the repository
@@ -50,24 +53,34 @@ Get video metadata
 ```
 
 ### GET /mp3
-Download video as MP3 file
+Download video as MP3 file with progress tracking
 
 **Query Parameters:**
 - `url` (required) - YouTube video URL
+
+**Response Headers:**
+- `X-Processing-Id`: ID for tracking progress
+- `X-Video-Id`: YouTube video ID
+- `X-Video-Title`: Video title
 
 **Response:** MP3 file download
 
 ### GET /mp4
-Download video as MP4 file
+Download video as MP4 file with progress tracking
 
 **Query Parameters:**
 - `url` (required) - YouTube video URL
+
+**Response Headers:**
+- `X-Processing-Id`: ID for tracking progress
+- `X-Video-Id`: YouTube video ID
+- `X-Video-Title`: Video title
 
 **Response:** MP4 file download
 
 ## Asynchronous Processing System
 
-The `/transcript` endpoint now uses asynchronous processing to handle long-running operations. Instead of waiting for the full processing to complete, it returns immediately with a processing ID that can be used to track progress and retrieve results later.
+The `/transcript`, `/mp3`, and `/mp4` endpoints use asynchronous processing to handle operations. Instead of waiting for completion, they return immediately with identifiers for tracking progress.
 
 ### GET /transcript
 Initiate transcript processing
@@ -92,7 +105,7 @@ Initiate transcript processing
 Get processing status
 
 **Path Parameters:**
-- `id` (required) - Processing ID from /transcript response
+- `id` (required) - Processing ID
 
 **Response:**
 ```json
@@ -100,6 +113,8 @@ Get processing status
   "id": "unique-job-id",
   "status": "queued|processing|completed|failed",
   "progress": 30,
+  "video_id": "YouTube video ID",
+  "video_title": "Video title",
   "createdAt": "ISO timestamp",
   "lastUpdated": "ISO timestamp"
 }
@@ -109,7 +124,7 @@ Get processing status
 Get processing result
 
 **Path Parameters:**
-- `id` (required) - Processing ID from /transcript response
+- `id` (required) - Processing ID
 
 **Response (if completed):**
 ```json
@@ -137,23 +152,31 @@ Get processing result
 }
 ```
 
+## Removing RapidAPI Authentication
+To disable RapidAPI authentication during local development:
+```javascript
+// In index.js, comment out this line:
+// app.use(rapidApiAuth);
+```
+
 ## Example Usage
 ```bash
 # Get video info
 curl "http://localhost:3500/info?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-# Download MP3
-curl -O "http://localhost:3500/mp3?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+# Download MP3 and track progress
+curl -I "http://localhost:3500/mp3?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+# Extract X-Processing-Id from headers
+processing_id="your_processing_id"
+curl "http://localhost:3500/progress/$processing_id"
 
 # Initiate transcript processing
 response=$(curl -s "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 processing_id=$(echo $response | jq -r '.processingId')
-
-# Check progress
 curl "http://localhost:3500/progress/$processing_id"
-
-# Get result (when progress is 100%)
 curl "http://localhost:3500/result/$processing_id"
+```
+
 ```
 
 ## Dependencies

@@ -177,7 +177,8 @@ curl "http://localhost:3500/progress/$processing_id"
 curl "http://localhost:3500/result/$processing_id"
 ```
 
-```
+## Legal
+- [Terms of Use](TERMS.md) - Important usage guidelines and restrictions
 
 ## Dependencies
 - express

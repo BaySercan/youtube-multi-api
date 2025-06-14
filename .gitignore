@@ -4,3 +4,5 @@ temp
 .vercel
 .vscode
 bin/
+cookies.txt
+.venv

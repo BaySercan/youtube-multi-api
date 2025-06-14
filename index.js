@@ -358,8 +358,10 @@ app.get("/transcript", async (req, res) => {
       updateProgress(processingId, 10, 'processing');
       const info = await getVideoInfo(videoUrl);
       
-      updateProgress(processingId, 30, 'processing');
+      updateProgress(processingId, 20, 'processing');
       const transcriptXml = await getVideoTranscript(videoUrl, lang);
+      
+      updateProgress(processingId, 30, 'processing');
         
         // Parse transcript (supports XML and WebVTT formats)
         let subtitleLines = [];
@@ -394,6 +396,7 @@ app.get("/transcript", async (req, res) => {
 
         if (!skipAI) {
             try {
+                updateProgress(processingId, 40, 'processing');
                 // Process entire text at once
                 const rawText = cleanedLines.join(' ');
                 const messages = [
@@ -419,6 +422,7 @@ app.get("/transcript", async (req, res) => {
 
                 // First pass - clean up and format
                 const firstResponse = await callAIModel(messages, useDeepSeek);
+                updateProgress(processingId, 50, 'processing');
                 
                 // Update processor if we switched to backup model
                 if (firstResponse.modelUsed === 'qwen') {
@@ -445,6 +449,7 @@ app.get("/transcript", async (req, res) => {
                 ];
 
                 const finalResponse = await callAIModel(cleanupMessages, useDeepSeek);
+                updateProgress(processingId, 60, 'processing');
                 
                 // After getting finalResponse, split transcript and notes if needed
                 let transcriptText = finalResponse.choices[0].message.content.trim();
@@ -453,6 +458,7 @@ app.get("/transcript", async (req, res) => {
                     transcriptText = main.trim();
                     aiNotes = notes.join('NOTE:').trim();
                 }
+                updateProgress(processingId, 70, 'processing');
                 finalTranscript = transcriptText;
 
             } catch (error) {
@@ -465,7 +471,10 @@ app.get("/transcript", async (req, res) => {
             finalTranscript = cleanedLines.join(' ');
         }
 
+      updateProgress(processingId, 80, 'processing');
       const isProcessed = !skipAI && finalTranscript && finalTranscript.trim().length > 0;
+      
+      updateProgress(processingId, 90, 'processing');
       updateProgress(processingId, 100, 'completed');
       job.result = {
         success: true,

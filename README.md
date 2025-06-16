@@ -2,6 +2,8 @@
 
 REST API to download YouTube videos as MP3/MP4 files and get video transcripts. Built with Node.js, Express, and yt-dlp.
 
+**New Authentication System**: This API now uses JWT authentication for enhanced security.
+
 ## Important Limitations
 - All processing results are temporary and immediately discarded after delivery
 - Files are streamed directly without server storage
@@ -14,11 +16,34 @@ REST API to download YouTube videos as MP3/MP4 files and get video transcripts. 
 ## Installation
 1. Clone the repository
 2. Install dependencies: `npm install`
-3. Create `.env` file with your OpenRouter API key:
+3. Generate RSA key pair for JWT authentication:
+```bash
+node generateKeys.js
+```
+4. Create `.env` file with your OpenRouter API key and JWT settings:
 ```
 OPENROUTER_API_KEY=your_api_key_here
+JWT_EXPIRES_IN=1h
 ```
 4. Start the server: `npm start`
+
+## Authentication
+All endpoints except `/ping` and `/test-token` require JWT authentication.
+
+### Getting a Test Token (Development Only)
+`GET /test-token`  
+Returns a JWT token for testing in development environment.
+
+**Response:**
+```json
+{
+  "token": "your_jwt_token_here"
+}
+```
+
+### Using the Token
+Include the token in the Authorization header:  
+`Authorization: Bearer <your_token>`
 
 ## API Endpoints
 
@@ -154,18 +179,25 @@ Get processing result
 
 
 ## Example Usage
-```bash
-# Get video info
-curl "http://localhost:3500/info?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-# Download MP3 and track progress
-curl -I "http://localhost:3500/mp3?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```bash
+# Get a test token (development only)
+curl "http://localhost:3500/test-token"
+
+# Get video info (with JWT)
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/info?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Download MP3 and track progress (with JWT)
+curl -I -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/mp3?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 # Extract X-Processing-Id from headers
 processing_id="your_processing_id"
 curl "http://localhost:3500/progress/$processing_id"
 
-# Initiate transcript processing
-response=$(curl -s "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+# Initiate transcript processing (with JWT)
+response=$(curl -s -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 processing_id=$(echo $response | jq -r '.processingId')
 curl "http://localhost:3500/progress/$processing_id"
 curl "http://localhost:3500/result/$processing_id"

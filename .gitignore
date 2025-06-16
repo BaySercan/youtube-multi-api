@@ -6,3 +6,4 @@ temp
 bin/
 cookies.txt
 .venv
+keys/

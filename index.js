@@ -5,6 +5,7 @@ const cors = require("cors");
 const { promises: fs } = require("fs");
 const path = require("path");
 const axios = require('axios');
+const jwtAuth = require('./middleware/jwtAuth');
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const PQueue = require('p-queue').default;
@@ -82,6 +83,12 @@ async function validateCookiesFile() {
 
 const app = express();
 app.use(cors());
+
+// Apply JWT authentication to all routes except /ping and /test-token
+app.use((req, res, next) => {
+  if (req.path === '/ping' || req.path === '/test-token') return next();
+  jwtAuth(req, res, next);
+});
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
@@ -194,6 +201,34 @@ async function getVideoTranscript(url, lang = 'tr') {
 }
 
 // Routes
+
+// Test endpoint to generate JWT token (only in development)
+app.get("/test-token", (req, res) => {
+  // Debugging: Show actual NODE_ENV value
+  const nodeEnv = process.env.NODE_ENV || 'undefined';
+  
+  if (nodeEnv !== 'development') {
+    return res.status(404).send(`Test token endpoint only available in development mode. Current NODE_ENV: ${nodeEnv}`);
+  }
+  
+  try {
+    const jwt = require('jsonwebtoken');
+    const fs = require('fs');
+    const path = require('path');
+    const privateKey = fs.readFileSync(path.join(__dirname, 'keys/private.key'), 'utf8');
+    
+    const token = jwt.sign(
+      { userId: 'test-user' }, 
+      privateKey, 
+      { algorithm: 'RS256', expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+    );
+    
+    res.json({ token });
+  } catch (error) {
+    console.error('Error generating test token:', error);
+    res.status(500).send('Internal server error');
+  }
+});
 
 app.get("/ping", (req, res) => {
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });

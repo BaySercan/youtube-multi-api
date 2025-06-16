@@ -1,12 +1,6 @@
 # Use Node.js 20 base image
 FROM node:20
 
-# Install Python and pip
-RUN apt-get update && apt-get install -y python3 python3-pip
-
-# Install yt-dlp
-RUN pip3 install yt-dlp
-
 # Set working directory
 WORKDIR /usr/src/app
 
@@ -18,6 +12,9 @@ RUN npm install
 
 # Copy application source code
 COPY . .
+
+# Generate RSA keys for JWT authentication
+RUN mkdir -p keys && node generateKeys.js
 
 # Expose port
 EXPOSE 3500

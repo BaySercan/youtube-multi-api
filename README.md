@@ -152,12 +152,6 @@ Get processing result
 }
 ```
 
-## Removing RapidAPI Authentication
-To disable RapidAPI authentication during local development:
-```javascript
-// In index.js, comment out this line:
-// app.use(rapidApiAuth);
-```
 
 ## Example Usage
 ```bash

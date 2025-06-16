@@ -5,7 +5,7 @@ const cors = require("cors");
 const { promises: fs } = require("fs");
 const path = require("path");
 const axios = require('axios');
-const rapidApiAuth = require('./middleware/auth');
+
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const PQueue = require('p-queue').default;
 const { v4: uuidv4 } = require('uuid');
@@ -214,7 +214,7 @@ app.get("/validate-cookies", async (req, res) => {
     }
 });
 
-app.use(rapidApiAuth);
+
 
 app.get("/info", async (req, res) => {
     const { url } = req.query;

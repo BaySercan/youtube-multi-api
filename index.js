@@ -6,6 +6,7 @@ const { promises: fs } = require("fs");
 const path = require("path");
 const axios = require('axios');
 const jwtAuth = require('./middleware/jwtAuth');
+const { createClient } = require('@supabase/supabase-js');
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const PQueue = require('p-queue').default;
@@ -84,9 +85,19 @@ async function validateCookiesFile() {
 const app = express();
 app.use(cors());
 
+// Initialize Supabase client
+const supabaseAdmin = createClient(
+  process.env.VITE_SUPABASE_URL, 
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+);
+
 // Apply JWT authentication to all routes except /ping and /test-token
 app.use((req, res, next) => {
-  if (req.path === '/ping' || req.path === '/test-token') return next();
+  if (req.path === '/ping' || 
+      req.path === '/test-token' || 
+      req.path === '/auth/exchange-token') {
+    return next();
+  }
   jwtAuth(req, res, next);
 });
 
@@ -644,4 +655,40 @@ app.get("/result/:id", (req, res) => {
     });
   }
   res.json(job.result);
+});
+
+// Token exchange endpoint
+app.post('/auth/exchange-token', express.json(), async (req, res) => {
+  const { supabaseAccessToken } = req.body;
+  if (!supabaseAccessToken) {
+    return res.status(400).json({ error: 'Missing supabaseAccessToken in request body' });
+  }
+
+  try {
+    // Validate token
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(supabaseAccessToken);
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid or expired Supabase token' });
+    }
+
+    // Generate custom JWT
+    const privateKey = fs.readFileSync(path.join(__dirname, 'keys/private.key'), 'utf8');
+    const apiToken = jwt.sign(
+      {
+        iss: 'youtube-multi-api',
+        sub: user.id,
+        iat: Math.floor(Date.now() / 1000),
+      },
+      privateKey,
+      { algorithm: 'RS256', expiresIn: '1h' }
+    );
+
+    res.json({ 
+      apiToken, 
+      expiresIn: 3600 
+    });
+  } catch (error) {
+    console.error('Token exchange error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });

@@ -9,19 +9,18 @@ info:
 servers:
   - url: http://localhost:3500
     description: Local development server
-  - url: https://youtube-multi-api.onrender.com
-    description: Production server (Render.com)
+  - url: https://p01--youtube-multi-api-private-srv--yfb9ttcdx8bx.code.run
+    description: Production server (Private Service)
     
 security:
-  - RapidAPI: []
+  - BearerAuth: []
     
 components:
   securitySchemes:
-    RapidAPI:
-      type: apiKey
-      name: X-RapidAPI-Proxy-Secret
-      in: header
-      description: RapidAPI authentication token
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 paths:
   /ping:
     get:
@@ -50,7 +49,7 @@ paths:
       summary: Get video metadata
       description: Retrieve metadata about a YouTube video
       security:
-        - RapidAPI: []
+        - BearerAuth: []
       parameters:
         - in: query
           name: url
@@ -92,7 +91,7 @@ paths:
       summary: Download video as MP3
       description: Download a YouTube video as an MP3 audio file
       security:
-        - RapidAPI: []
+        - BearerAuth: []
       parameters:
         - in: query
           name: url
@@ -115,7 +114,7 @@ paths:
       summary: Download video as MP4
       description: Download a YouTube video as an MP4 video file
       security:
-        - RapidAPI: []
+        - BearerAuth: []
       parameters:
         - in: query
           name: url
@@ -138,7 +137,7 @@ paths:
       summary: Get video transcript
       description: Retrieve AI-processed video transcript
       security:
-        - RapidAPI: []
+        - BearerAuth: []
       parameters:
         - in: query
           name: url

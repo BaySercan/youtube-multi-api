@@ -1,5 +1,10 @@
-# Use Node.js 20 base image
-FROM node:20
+# Use updated Node.js 20 Alpine base image with security fixes
+FROM node:20-alpine3.19
+
+# Update system packages and install necessary dependencies
+RUN apk --no-cache update && \
+    apk --no-cache upgrade && \
+    apk add --no-cache ca-certificates
 
 # Set working directory
 WORKDIR /usr/src/app

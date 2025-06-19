@@ -9,7 +9,6 @@ const jwtAuth = require('./middleware/jwtAuth');
 const { createClient } = require('@supabase/supabase-js');
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
-const PQueue = require('p-queue').default;
 const { v4: uuidv4 } = require('uuid');
 
 // Initialize yt-dlp-wrap
@@ -40,6 +39,11 @@ async function ensureYtDlpBinary() {
 // Wrap initialization in async function
 async function initializeServer() {
     await ensureYtDlpBinary();
+    
+    // Dynamically import p-queue and initialize processingQueue
+    const { default: PQueue } = await import('p-queue');
+    processingQueue = new PQueue({ concurrency: 2 });
+    console.log('Processing queue initialized');
     
     // Server listening logic
     const PORT = process.env.PORT || 3500;
@@ -105,8 +109,8 @@ app.use((req, res, next) => {
 const tempDir = path.join(__dirname, "temp");
 fs.mkdir(tempDir, { recursive: true }).catch(console.error);
 
-// Initialize processing queue and cache
-const processingQueue = new PQueue({ concurrency: 2 });
+// Initialize processing queue and cache (will be initialized in initializeServer)
+let processingQueue;
 const processingCache = new Map();
 
 // Function to update processing status

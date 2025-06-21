@@ -4,7 +4,7 @@ FROM node:20-alpine3.19
 # Update system packages and install necessary dependencies
 RUN apk --no-cache update && \
     apk --no-cache upgrade && \
-    apk add --no-cache ca-certificates
+    apk add --no-cache ca-certificates python3
 
 # Set working directory
 WORKDIR /usr/src/app

@@ -5,12 +5,17 @@ const cors = require("cors");
 const { promises: fs } = require("fs");
 const path = require("path");
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
 const jwtAuth = require('./middleware/jwtAuth');
 const { createClient } = require('@supabase/supabase-js');
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const { v4: uuidv4 } = require('uuid');
 
+// Sanitize HTTP header values by removing non-ASCII characters
+function sanitizeHeaderValue(value) {
+  return value.replace(/[^\x20-\x7E]/g, '');
+}
 // Initialize yt-dlp-wrap
 let ytDlpWrap;
 
@@ -314,7 +319,7 @@ app.get("/mp3", async (req, res) => {
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('X-Processing-Id', processingId);
         res.setHeader('X-Video-Id', info.id);
-        res.setHeader('X-Video-Title', info.title);
+        res.setHeader('X-Video-Title', sanitizeHeaderValue(info.title));
 
         const args = [
             '--extract-audio',
@@ -389,7 +394,7 @@ app.get("/mp4", async (req, res) => {
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('X-Processing-Id', processingId);
         res.setHeader('X-Video-Id', info.id);
-        res.setHeader('X-Video-Title', info.title);
+        res.setHeader('X-Video-Title', sanitizeHeaderValue(info.title));
 
         const args = [
             '--format', 'mp4',
@@ -676,21 +681,29 @@ app.post('/auth/exchange-token', express.json(), async (req, res) => {
     }
 
     // Generate custom JWT
-    const privateKey = fs.readFileSync(path.join(__dirname, 'keys/private.key'), 'utf8');
-    const apiToken = jwt.sign(
-      {
-        iss: 'youtube-multi-api',
-        sub: user.id,
-        iat: Math.floor(Date.now() / 1000),
-      },
-      privateKey,
-      { algorithm: 'RS256', expiresIn: '1h' }
-    );
+    const keyPath = path.join(__dirname, 'keys', 'private.key');
+    try {
+      const privateKey = await fs.readFile(keyPath, 'utf8');
+      const apiToken = jwt.sign(
+        {
+          iss: 'youtube-multi-api',
+          sub: user.id,
+          iat: Math.floor(Date.now() / 1000),
+        },
+        privateKey,
+        { algorithm: 'RS256', expiresIn: '1h' }
+      );
 
-    res.json({ 
-      apiToken, 
-      expiresIn: 3600 
-    });
+      res.json({ 
+        apiToken, 
+        expiresIn: 3600 
+      });
+    } catch (error) {
+      console.error(`Error reading private key from ${keyPath}:`, error);
+      res.status(500).json({ 
+        error: `Could not read private key: ${error.message}` 
+      });
+    }
   } catch (error) {
     console.error('Token exchange error:', error);
     res.status(500).json({ error: 'Internal server error' });

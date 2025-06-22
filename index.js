@@ -656,14 +656,15 @@ app.get("/result/:id", (req, res) => {
   if (!job) {
     return res.status(404).json({ error: "Processing ID not found" });
   }
-  if (job.status !== 'completed') {
+  if (job.progress !== 100 || job.status !== 'Completed') {
     return res.status(202).json({
       message: "Processing not complete",
       status: job.status,
       progress: job.progress
     });
   }
-  res.json(job.result);
+  console.log(`Returning result for processing ID: ${job.id} - Status: ${job.status} - Progress: ${job.progress} - Result: ${job.result}`);
+  res.status(200).json(job.result);
 });
 
 // Token exchange endpoint

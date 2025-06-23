@@ -598,7 +598,7 @@ app.get("/transcript", async (req, res) => {
         transcript: finalTranscript,
         ai_notes: aiNotes,
         isProcessed: isProcessed,
-        processor: isProcessed ? 'None' : processorUsed,
+        processor: isProcessed ? processorUsed : 'None',
         video_id: info.id,
         channel_id: info.channel_id,
         channel_name: info.channel,

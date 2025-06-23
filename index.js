@@ -276,7 +276,7 @@ app.get("/info", async (req, res) => {
     if (!url) return res.status(400).send("Missing url parameter");
     try {
         const info = await getVideoInfo(Array.isArray(url) ? url[0] : url);
-        res.send({
+         res.send({
             title: info.title,
             thumbnail: info.thumbnail,
             video_id: info.id,
@@ -473,10 +473,10 @@ app.get("/transcript", async (req, res) => {
       updateProgress(processingId, 10, 'Getting video information...');
       const info = await getVideoInfo(videoUrl);
       
-      updateProgress(processingId, 20, 'Fetching XML transcript...');
+      updateProgress(processingId, 20, 'Fetching raw transcript...');
       const transcriptXml = await getVideoTranscript(videoUrl, lang);
       
-      updateProgress(processingId, 30, 'Fetching XML transcript is complete');
+      updateProgress(processingId, 30, 'Fetching raw transcript is complete');
         
         // Parse transcript (supports XML and WebVTT formats)
         let subtitleLines = [];
@@ -598,7 +598,7 @@ app.get("/transcript", async (req, res) => {
         transcript: finalTranscript,
         ai_notes: aiNotes,
         isProcessed: isProcessed,
-        processor: processorUsed,
+        processor: isProcessed ? 'None' : processorUsed,
         video_id: info.id,
         channel_id: info.channel_id,
         channel_name: info.channel,

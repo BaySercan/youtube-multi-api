@@ -21,6 +21,95 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    VideoInfoSummary:
+      type: object
+      properties:
+        availability:
+          type: string
+          nullable: true
+        automatic_captions:
+          type: object
+        categories:
+          type: array
+          items:
+            type: string
+        channel_name: # Changed from channel
+          type: string
+        channel_follower_count:
+          type: integer
+          nullable: true
+        channel_id:
+          type: string
+        channel_url:
+          type: string
+        comment_count:
+          type: integer
+          nullable: true
+        description:
+          type: string
+        display_id:
+          type: string
+        duration:
+          type: integer
+        duration_string:
+          type: string
+        filesize_approx:
+          type: integer
+          nullable: true
+        fulltitle:
+          type: string
+        video_id: # Changed from id
+          type: string
+        language:
+          type: string
+          nullable: true
+        license:
+          type: string
+          nullable: true
+        like_count:
+          type: integer
+          nullable: true
+        original_url:
+          type: string
+        playable_in_embed:
+          type: boolean
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        thumbnail:
+          type: string
+        timestamp:
+          type: integer
+          nullable: true
+        title:
+          type: string
+        post_date: # Added post_date, upload_date removed from summary schema
+          type: string
+          format: date-time
+        uploader:
+          type: string
+        uploader_id:
+          type: string
+          nullable: true
+        uploader_url:
+          type: string
+          nullable: true
+        view_count:
+          type: integer
+          nullable: true
+        was_live:
+          type: boolean
+          nullable: true
+    VideoInfoFull:
+      type: object
+      description: Represents the full video information object. The properties can vary.
+      # As the full object can be very diverse and large,
+      # we define it as a generic object or you can list known common properties.
+      # For simplicity, marking as a generic object:
+      additionalProperties: true
 paths:
   /ping:
     get:
@@ -57,33 +146,119 @@ paths:
           schema:
             type: string
           description: YouTube video URL
+        - in: query
+          name: type
+          required: false
+          schema:
+            type: string
+            enum:
+              - sum
+              - full
+            default: sum
+          description: Type of information to return (sum for summary, full for all details)
       responses:
         '200':
           description: Successful response
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  title:
-                    type: string
-                  thumbnail:
-                    type: string
-                  video_id:
-                    type: string
-                  channel_id:
-                    type: string
-                  channel_name:
-                    type: string
-                  post_date:
-                    type: string
-              example:
-                title: "Example Video Title"
-                thumbnail: "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg"
-                video_id: "dQw4w9WgXcQ"
-                channel_id: "UC12345678"
-                channel_name: "Example Channel"
-                post_date: "20230101"
+                oneOf: # Indicates that the response can be one of the following schemas
+                  - $ref: '#/components/schemas/VideoInfoSummary'
+                  - $ref: '#/components/schemas/VideoInfoFull'
+              examples:
+                summary:
+                  value:
+                    availability: null
+                    automatic_captions: {}
+                    categories: ["Music"]
+                    channel_name: "Official Channel" # Changed
+                    channel_follower_count: 1000000
+                    channel_id: "UC12345678"
+                    channel_url: "https://www.youtube.com/channel/UC12345678"
+                    comment_count: 5000
+                    description: "Video description text."
+                    display_id: "dQw4w9WgXcQ"
+                    duration: 212
+                    duration_string: "3:32"
+                    filesize_approx: 5000000
+                    fulltitle: "Full Video Title"
+                    video_id: "dQw4w9WgXcQ" # Changed
+                    language: "en"
+                    license: "Standard YouTube License"
+                    like_count: 100000
+                    original_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    playable_in_embed: true
+                    tags: ["tag1", "tag2"]
+                    thumbnail: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+                    timestamp: 1254000000
+                    title: "Video Title"
+                    post_date: "2009-10-25T00:00:00.000Z" # Changed from upload_date and format updated
+                    uploader: "Uploader Name"
+                    uploader_id: "uploaderID"
+                    uploader_url: "https://www.youtube.com/user/uploaderID"
+                    view_count: 100000000
+                    was_live: false
+                full:
+                  description: "Full video information, structure may vary."
+                  value: {
+                    "id": "dQw4w9WgXcQ",
+                    "title": "Video Title",
+                    "formats": [],
+                    "thumbnails": [],
+                    "description": "Video description text.",
+                    "upload_date": "20091025",
+                    "uploader": "Uploader Name",
+                    "uploader_id": "uploaderID",
+                    "uploader_url": "https://www.youtube.com/user/uploaderID",
+                    "channel_id": "UC12345678",
+                    "channel_url": "https://www.youtube.com/channel/UC12345678",
+                    "duration": 212,
+                    "view_count": 100000000,
+                    "average_rating": null,
+                    "age_limit": 0,
+                    "webpage_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    "categories": ["Music"],
+                    "tags": ["tag1", "tag2"],
+                    "playable_in_embed": true,
+                    "live_status": "not_live",
+                    "release_timestamp": null,
+                    "_format_sort_fields": ["fps", "res", "tbr", "format_id"],
+                    "automatic_captions": {},
+                    "subtitles": {},
+                    "comment_count": 5000,
+                    "chapters": null,
+                    "heatmap": null,
+                    "like_count": 100000,
+                    "channel": "Official Channel",
+                    "channel_follower_count": 1000000,
+                    "track": "Track Title",
+                    "artist": "Artist Name",
+                    "album": "Album Name",
+                    "release_date": null,
+                    "release_year": null,
+                    "webpage_url_basename": "watch?v=dQw4w9WgXcQ",
+                    "webpage_url_domain": "youtube.com",
+                    "extractor": "youtube",
+                    "extractor_key": "Youtube",
+                    "playlist": null,
+                    "playlist_index": null,
+                    "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+                    "display_id": "dQw4w9WgXcQ",
+                    "requested_subtitles": null,
+                    "_has_drm": null,
+                    "fulltitle": "Full Video Title",
+                    "duration_string": "3:32",
+                    "epoch": 1672531200,
+                    "original_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    "filename": "video.mp4",
+                    "_filename": "video.mp4",
+                    "filesize_approx": 5000000,
+                    "was_live": false,
+                    "availability": "public",
+                    "language": "en",
+                    "license": "Standard YouTube License",
+                    "timestamp": 1254000000
+                  }
         '400':
           description: Invalid request
   /mp3:

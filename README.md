@@ -64,17 +64,58 @@ Get video metadata
 
 **Query Parameters:**
 - `url` (required) - YouTube video URL
+- `type` (optional) - Type of information to return.
+    - `sum` (default): Returns a summary of the video information.
+    - `full`: Returns the complete video information object from yt-dlp.
 
-**Response:**
+**Response (type=sum):**
 ```json
 {
-  "title": "Video title",
-  "thumbnail": "Video thumbnail URL",
-  "video_id": "YouTube video ID",
-  "channel_id": "YouTube channel ID",
-  "channel_name": "Channel name",
-  "post_date": "Upload date (YYYYMMDD)"
+  "availability": null,
+  "automatic_captions": {},
+  "categories": ["Music"],
+  "channel_name": "Official Channel",
+  "channel_follower_count": 1000000,
+  "channel_id": "UC12345678",
+  "channel_url": "https://www.youtube.com/channel/UC12345678",
+  "comment_count": 5000,
+  "description": "Video description text.",
+  "display_id": "dQw4w9WgXcQ",
+  "duration": 212,
+  "duration_string": "3:32",
+  "filesize_approx": 5000000,
+  "fulltitle": "Full Video Title",
+  "video_id": "dQw4w9WgXcQ",
+  "language": "en",
+  "license": "Standard YouTube License",
+  "like_count": 100000,
+  "original_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "playable_in_embed": true,
+  "tags": ["tag1", "tag2"],
+  "thumbnail": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  "timestamp": 1254000000,
+  "title": "Video Title",
+  "post_date": "2009-10-25T00:00:00.000Z",
+  "uploader": "Uploader Name",
+  "uploader_id": "uploaderID",
+  "uploader_url": "https://www.youtube.com/user/uploaderID",
+  "view_count": 100000000,
+  "was_live": false
 }
+```
+
+**Response (type=full):**
+The response for `type=full` includes the complete JSON output from `yt-dlp`. This object can be quite large and its structure may vary. Refer to the `yt-dlp` documentation for details on the possible fields.
+
+**Example `curl` commands:**
+```bash
+# Get summary video info (default)
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/info?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Get full video info
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/info?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&type=full"
 ```
 
 ### GET /mp3

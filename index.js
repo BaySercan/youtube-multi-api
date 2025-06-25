@@ -278,19 +278,52 @@ app.get("/validate-cookies", async (req, res) => {
 });
 
 app.get("/info", async (req, res) => {
-    const { url } = req.query;
+    const { url, type = "sum" } = req.query; // Default type to "sum"
     if (!url) return res.status(400).send("Missing url parameter");
+
     try {
         const info = await getVideoInfo(Array.isArray(url) ? url[0] : url);
-         res.send({
-            title: info.title,
-            thumbnail: info.thumbnail,
-            video_id: info.id,
-            channel_id: info.channel_id,
-            channel_name: info.channel,
-            post_date: new Date(`${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`).toISOString()
-        });
+
+        if (type === "full") {
+            res.send(info);
+        } else { // Default to summary ("sum")
+            const summaryInfo = {
+                availability: info.availability,
+                automatic_captions: info.automatic_captions,
+                categories: info.categories,
+                channel_name: info.channel, // Changed from channel
+                channel_follower_count: info.channel_follower_count,
+                channel_id: info.channel_id,
+                channel_url: info.channel_url,
+                comment_count: info.comment_count,
+                description: info.description,
+                display_id: info.display_id,
+                duration: info.duration,
+                duration_string: info.duration_string,
+                filesize_approx: info.filesize_approx,
+                fulltitle: info.fulltitle,
+                video_id: info.id, // Changed from id
+                language: info.language,
+                license: info.license,
+                like_count: info.like_count,
+                original_url: info.original_url,
+                playable_in_embed: info.playable_in_embed,
+                tags: info.tags,
+                thumbnail: info.thumbnail,
+                timestamp: info.timestamp,
+                title: info.title,
+                // upload_date: info.upload_date, // Raw upload_date
+                post_date: new Date(`${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`).toISOString(), // Kept original post_date format
+                uploader: info.uploader,
+                uploader_id: info.uploader_id,
+                uploader_url: info.uploader_url,
+                view_count: info.view_count,
+                was_live: info.was_live,
+            };
+            res.send(summaryInfo);
+        }
     } catch (error) {
+        console.error("Error in /info endpoint:", error);
         res.status(400).send("Invalid url or error fetching video info");
     }
 });

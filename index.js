@@ -41,14 +41,21 @@ async function ensureYtDlpBinary() {
     }
 }
 
-// Wrap initialization in async function
+// Wrap initialization in async function (PQueue)
 async function initializeServer() {
     await ensureYtDlpBinary();
     
     // Dynamically import p-queue and initialize processingQueue
     const { default: PQueue } = await import('p-queue');
-    processingQueue = new PQueue({ concurrency: 2 });
-    console.log('Processing queue initialized');
+    processingQueue = new PQueue({ 
+      concurrency: 4, // Max 4 concurrent requests
+      intervalCap: 5, // Max 5 requests per interval
+      interval: 1 * 1000, // Per 1 second
+      // Add a timeout if downloads get stuck for too long
+      timeout: 30 * 60 * 1000, // 30 minutes (adjust based on expected download times)
+      throwOnTimeout: true // Whether to throw an error if a task times out
+     });
+    console.log('Processing queue (PQueue) initialized');
     
     // Server listening logic
     const PORT = process.env.PORT || 3500;
@@ -100,7 +107,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 );
 
-// Apply JWT authentication to all routes except /ping and /test-token
+// Apply JWT authentication to all routes except /ping, /test-token and /auth/exchange-token
+// This allows these endpoints to be accessible without authentication
 app.use((req, res, next) => {
   if (req.path === '/ping' || 
       req.path === '/test-token' || 
@@ -128,7 +136,7 @@ function updateProgress(processingId, progress, status) {
   }
 }
 
-// Function to call OpenRouter API (no changes)
+// Function to call OpenRouter API
 async function callAIModel(messages, useDeepSeek = true) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey || apiKey.trim() === '') {
@@ -268,8 +276,6 @@ app.get("/validate-cookies", async (req, res) => {
         res.status(500).json({ valid: false, error: error.message });
     }
 });
-
-
 
 app.get("/info", async (req, res) => {
     const { url } = req.query;
@@ -668,8 +674,10 @@ app.get("/result/:id", (req, res) => {
 });
 
 // Token exchange endpoint
+// This endpoint allows users to exchange their Supabase access token for a custom JWT token
+// This is useful for authenticating with the YouTube Multi API without exposing Supabase keys
 app.post('/auth/exchange-token', express.json(), async (req, res) => {
-  const { supabaseAccessToken } = req.body;
+  const { supabaseAccessToken } = req.body; // Expecting JSON body with supabaseAccessToken
   if (!supabaseAccessToken) {
     return res.status(400).json({ error: 'Missing supabaseAccessToken in request body' });
   }
@@ -696,8 +704,8 @@ app.post('/auth/exchange-token', express.json(), async (req, res) => {
       );
 
       res.json({ 
-        apiToken, 
-        expiresIn: 3600 
+        apiToken, // Custom JWT token
+        expiresIn: 3600 // 1 hour in seconds
       });
     } catch (error) {
       console.error(`Error reading private key from ${keyPath}:`, error);

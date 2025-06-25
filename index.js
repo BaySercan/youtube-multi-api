@@ -302,7 +302,6 @@ app.get("/info", async (req, res) => {
                 duration_string: info.duration_string,
                 filesize_approx: info.filesize_approx,
                 fulltitle: info.fulltitle,
-                video_id: info.id, // Changed from id
                 language: info.language,
                 license: info.license,
                 like_count: info.like_count,
@@ -312,12 +311,13 @@ app.get("/info", async (req, res) => {
                 thumbnail: info.thumbnail,
                 timestamp: info.timestamp,
                 title: info.title,
-                // upload_date: info.upload_date, // Raw upload_date
                 post_date: new Date(`${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`).toISOString(), // Kept original post_date format
+                upload_date_raw: info.upload_date, // Raw upload_date
                 uploader: info.uploader,
                 uploader_id: info.uploader_id,
                 uploader_url: info.uploader_url,
                 view_count: info.view_count,
+                video_id: info.id, // Changed from id
                 was_live: info.was_live,
             };
             res.send(summaryInfo);

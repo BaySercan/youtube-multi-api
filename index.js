@@ -550,7 +550,7 @@ app.get("/transcript", async (req, res) => {
 
         if (!skipAI) {
             try {
-                updateProgress(processingId, 40, 'Processing transcript with AI model...');
+                updateProgress(processingId, 40, 'Processing transcript with AI ...');
                 // Process entire text at once
                 const rawText = cleanedLines.join(' ');
                 const messages = [
@@ -576,7 +576,7 @@ app.get("/transcript", async (req, res) => {
 
                 // First pass - clean up and format
                 const firstResponse = await callAIModel(messages, useDeepSeek);
-                updateProgress(processingId, 50, 'Cleaning up transcript with AI model...');
+                updateProgress(processingId, 50, 'Cleaning up transcript with AI ...');
                 
                 // Update processor if we switched to backup model
                 if (firstResponse.modelUsed === 'qwen') {

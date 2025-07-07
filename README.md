@@ -218,6 +218,35 @@ Get processing result
 }
 ```
 
+### POST /cancel/:id
+Cancel a processing job
+
+Cancel an in-progress MP3, MP4, or transcript processing job. This is useful for stopping long-running operations.
+
+**Path Parameters:**
+- `id` (required) - Processing ID obtained from the original request
+
+**Response (200 OK):**
+```json
+{
+  "message": "Process canceled successfully",
+  "video_id": "YouTube video ID",
+  "video_title": "Video title",
+  "queue_position": "Was #3 in queue"  // Only present if job was queued
+}
+```
+
+**Error Responses:**
+- 400: Process cannot be canceled or is already complete
+- 404: Processing ID not found
+
+**Example:**
+```bash
+# Cancel a processing job
+curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/cancel/your_processing_id_here"
+```
+
 
 ## Example Usage
 
@@ -236,11 +265,21 @@ curl -I -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 processing_id="your_processing_id"
 curl "http://localhost:3500/progress/$processing_id"
 
+# Cancel a download in progress
+curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/cancel/$processing_id"
+
 # Initiate transcript processing (with JWT)
 response=$(curl -s -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 processing_id=$(echo $response | jq -r '.processingId')
 curl "http://localhost:3500/progress/$processing_id"
+
+# Cancel transcript processing
+curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:3500/cancel/$processing_id"
+
+# Get processing result
 curl "http://localhost:3500/result/$processing_id"
 ```
 

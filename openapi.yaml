@@ -477,3 +477,47 @@ paths:
                     type: number
         '404':
           description: Processing ID not found
+  /cancel/{id}:
+    post:
+      summary: Cancel a processing job
+      description: Cancel a running processing job (MP3, MP4, or transcript)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Processing job ID
+      responses:
+        '200':
+          description: Successful cancellation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  video_id:
+                    type: string
+                    nullable: true
+                    description: ID of the video being processed
+                  video_title:
+                    type: string
+                    nullable: true
+                    description: Title of the video being processed
+                  queue_position:
+                    type: string
+                    nullable: true
+                    description: Position in queue if job was waiting (e.g., "Was #3 in queue")
+              example:
+                message: "Process canceled successfully"
+                video_id: "dQw4w9WgXcQ"
+                video_title: "Example Video Title"
+                queue_position: "Was #2 in queue"
+        '400':
+          description: Process cannot be canceled or is already complete
+        '404':
+          description: Processing ID not found

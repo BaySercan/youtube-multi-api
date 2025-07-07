@@ -127,17 +127,26 @@ let processingQueue;
 const processingCache = new Map();
 
 // Function to update processing status
-function updateProgress(processingId, progress, status) {
+function updateProgress(processingId, progress, status, videoId, videoTitle) {
   if (processingCache.has(processingId)) {
     const job = processingCache.get(processingId);
-    job.progress = progress;
-    job.status = status;
-    job.lastUpdated = Date.now();
+    if (job) { // Check if job exists before updating
+      job.progress = progress;
+      job.status = status;
+      job.lastUpdated = Date.now();
+      if (videoId) job.video_id = videoId;
+      if (videoTitle) job.video_title = videoTitle;
+
+      // Add cache cleanup for completed/failed/canceled jobs
+      if (status === 'completed' || status === 'failed' || status === 'canceled') {
+        setTimeout(() => processingCache.delete(processingId), 3600000); // 1 hour
+      }
+    }
   }
 }
 
 // Function to call OpenRouter API
-async function callAIModel(messages, useDeepSeek = true) {
+async function callAIModel(messages, useDeepSeek = true, signal) {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey || apiKey.trim() === '') {
         throw new Error('OPENROUTER_API_KEY environment variable is not set or empty');
@@ -147,6 +156,9 @@ async function callAIModel(messages, useDeepSeek = true) {
     let attempt = 0;
     while (attempt < maxRetries) {
         try {
+            if (signal && signal.aborted) {
+                throw new Error('The operation was aborted.');
+            }
             console.log(`Calling ${model} - Attempt ${attempt + 1}`);
             const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
                 model: model,
@@ -156,7 +168,8 @@ async function callAIModel(messages, useDeepSeek = true) {
                     'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
                     'HTTP-Referer': 'https://github.com/yourusername/youtube-download-api',
                     'Content-Type': 'application/json'
-                }
+                },
+                signal
             });
             if (response.data && response.data.choices && response.data.choices[0]) {
                 return response.data;
@@ -164,6 +177,10 @@ async function callAIModel(messages, useDeepSeek = true) {
                 throw new Error('Invalid API response format');
             }
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log('AI model call was aborted.');
+                throw error;
+            }
             console.error(`API Error (Attempt ${attempt + 1}):`, error.message);
             if (error.response) {
                 console.error('Response Data:', error.response.data);
@@ -171,7 +188,7 @@ async function callAIModel(messages, useDeepSeek = true) {
             attempt++;
             if (attempt === maxRetries - 1 && useDeepSeek) {
                 console.log('Switching to backup model (qwen)…');
-                return callAIModel(messages, false);
+                return callAIModel(messages, false, signal);
             }
             if (attempt < maxRetries) {
                 const delay = Math.pow(2, attempt) * 1000;
@@ -183,9 +200,12 @@ async function callAIModel(messages, useDeepSeek = true) {
 }
 
 // Helper function to get video info using yt-dlp-wrap
-async function getVideoInfo(url, retries = 3) {
+async function getVideoInfo(url, options = {}, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
+            if (options.signal && options.signal.aborted) {
+              throw new Error('The operation was aborted.');
+            }
             console.log(`Fetching video info for: ${url}`);
             const args = [
                 '--dump-json',
@@ -202,12 +222,16 @@ async function getVideoInfo(url, retries = 3) {
             }
 
             // The library finds the binary automatically.
-            const stdout = await ytDlpWrap.execPromise(args);
+            const stdout = await ytDlpWrap.execPromise(args, { signal: options.signal });
             const info = JSON.parse(stdout);
             console.log(`Successfully fetched info for video: ${info.title}`);
             return info;
 
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log('Video info fetch was aborted.');
+                throw error;
+            }
             console.error(`Error getting video info (attempt ${i+1}/${retries}):`, error);
             if (i === retries - 1) throw error;
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -216,15 +240,15 @@ async function getVideoInfo(url, retries = 3) {
 }
 
 // Helper function to get video transcript
-async function getVideoTranscript(url, lang = 'tr') {
-    const info = await getVideoInfo(url);
+async function getVideoTranscript(url, lang = 'tr', signal) {
+    const info = await getVideoInfo(url, { signal });
     const tracks = info.automatic_captions?.[lang] || info.subtitles?.[lang] || [];
     if (tracks.length === 0) {
         const availableLangs = Object.keys(info.automatic_captions || {});
         throw new Error(`No subtitles available for language: ${lang}. Available: ${availableLangs.join(', ')}`);
     }
     const track = tracks.find(t => t.ext === 'ttml' || t.ext === 'xml' || t.ext === 'srv1') || tracks[0];
-    const transcriptResponse = await axios.get(track.url);
+    const transcriptResponse = await axios.get(track.url, { signal });
     return transcriptResponse.data;
 }
 
@@ -379,6 +403,9 @@ app.get("/mp3", async (req, res) => {
         const child = spawn(ytDlpWrap.binaryPath, args, {
             stdio: ['ignore', 'pipe', 'pipe']
         });
+
+        // Store the child process in the job cache
+        job.child = child;
         
         child.stdout.pipe(res);
         child.stderr.on('data', (data) => console.error(`[yt-dlp stderr] ${data}`));
@@ -392,6 +419,8 @@ app.get("/mp3", async (req, res) => {
         child.on('close', (code) => {
             if (code === 0) {
                 updateProgress(processingId, 100, 'completed');
+            } else if (code === null) { // SIGKILL returns null
+                updateProgress(processingId, 100, 'canceled');
             } else {
                 updateProgress(processingId, 100, 'failed');
             }
@@ -453,6 +482,9 @@ app.get("/mp4", async (req, res) => {
         const child = spawn(ytDlpWrap.binaryPath, args, {
             stdio: ['ignore', 'pipe', 'pipe']
         });
+
+        // Store the child process in the job cache
+        job.child = child;
         
         child.stdout.pipe(res);
         child.stderr.on('data', (data) => console.error(`[yt-dlp stderr] ${data}`));
@@ -466,6 +498,8 @@ app.get("/mp4", async (req, res) => {
         child.on('close', (code) => {
             if (code === 0) {
                 updateProgress(processingId, 100, 'completed');
+            } else if (code === null) { // SIGKILL returns null
+                updateProgress(processingId, 100, 'canceled');
             } else {
                 updateProgress(processingId, 100, 'failed');
             }
@@ -496,13 +530,15 @@ app.get("/transcript", async (req, res) => {
 
   // Create processing job
   const processingId = uuidv4();
+  const abortController = new AbortController();
   const job = {
     id: processingId,
     status: 'queued',
     progress: 0,
     createdAt: Date.now(),
     lastUpdated: Date.now(),
-    result: null
+    result: null,
+    abortController: abortController
   };
   processingCache.set(processingId, job);
 
@@ -510,10 +546,10 @@ app.get("/transcript", async (req, res) => {
   processingQueue.add(async () => {
     try {
       updateProgress(processingId, 10, 'Getting video information...');
-      const info = await getVideoInfo(videoUrl);
+      const info = await getVideoInfo(videoUrl, { signal: abortController.signal });
       
       updateProgress(processingId, 20, 'Fetching raw transcript...');
-      const transcriptXml = await getVideoTranscript(videoUrl, lang);
+      const transcriptXml = await getVideoTranscript(videoUrl, lang, abortController.signal);
       
       updateProgress(processingId, 30, 'Fetching raw transcript is complete');
         
@@ -575,7 +611,7 @@ app.get("/transcript", async (req, res) => {
                 ];
 
                 // First pass - clean up and format
-                const firstResponse = await callAIModel(messages, useDeepSeek);
+                const firstResponse = await callAIModel(messages, useDeepSeek, abortController.signal);
                 updateProgress(processingId, 50, 'Cleaning up transcript with AI ...');
                 
                 // Update processor if we switched to backup model
@@ -602,7 +638,7 @@ app.get("/transcript", async (req, res) => {
                     }
                 ];
 
-                const finalResponse = await callAIModel(cleanupMessages, useDeepSeek);
+                const finalResponse = await callAIModel(cleanupMessages, useDeepSeek, abortController.signal);
                 updateProgress(processingId, 60, 'Finalizing transcript with AI model...');
 
                 // After getting finalResponse, split transcript and notes if needed
@@ -616,6 +652,9 @@ app.get("/transcript", async (req, res) => {
                 finalTranscript = transcriptText;
 
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    throw error; // Re-throw to be caught by the outer catch block
+                }
                 console.error('AI processing error:', error);
                 // Fallback to basic cleaned text if AI processing fails
                 finalTranscript = cleanedLines.join(' ');
@@ -646,12 +685,17 @@ app.get("/transcript", async (req, res) => {
         ).toISOString()
       };
     } catch (error) {
-      console.error("Transcript Error:", error);
-      updateProgress(processingId, 100, 'failed');
-      job.result = {
-        success: false,
-        error: `Could not fetch transcript: ${error.message}. Video might not have subtitles in the requested language or they are disabled.`
-      };
+      if (error.name === 'AbortError') {
+        console.log(`Transcript job ${processingId} was canceled.`);
+        updateProgress(processingId, 100, 'canceled');
+      } else {
+        console.error("Transcript Error:", error);
+        updateProgress(processingId, 100, 'failed');
+        job.result = {
+          success: false,
+          error: `Could not fetch transcript: ${error.message}. Video might not have subtitles in the requested language or they are disabled.`
+        };
+      }
     }
   });
 
@@ -704,6 +748,47 @@ app.get("/result/:id", (req, res) => {
   }
   console.log(`Returning result for processing ID: ${job.id} - Status: ${job.status} - Progress: ${job.progress} - Result: ${job.result}`);
   res.status(200).json(job.result);
+});
+
+// New endpoint to cancel a running process
+app.post("/cancel/:id", async (req, res) => {
+  const glob = require('glob').glob;
+  const { promisify } = require('util');
+  const asyncGlob = promisify(glob);
+  const job = processingCache.get(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: "Processing ID not found" });
+  }
+
+  // Add queue position information
+  const position = processingQueue.size + 1;
+  
+  if (job.child) {
+    job.child.kill('SIGKILL');
+    // Cleanup temp files
+    const tempPattern = path.join(tempDir, `*${job.video_id}*`);
+    const files = await glob(tempPattern);
+    await Promise.all(files.map(f => fs.unlink(f).catch(() => {})));
+    updateProgress(req.params.id, 100, 'canceled');
+    res.status(200).json({ 
+      message: "Process canceled successfully",
+      video_id: job.video_id,
+      video_title: job.video_title,
+      queue_position: position > 1 ? `Was #${position} in queue` : null,
+      cleaned_files: files.length
+    });
+  } else if (job.abortController) {
+    job.abortController.abort();
+    updateProgress(req.params.id, 100, 'canceled');
+    res.status(200).json({ 
+      message: "Transcript process canceled successfully",
+      video_id: job.video_id,
+      video_title: job.video_title,
+      queue_position: position > 1 ? `Was #${position} in queue` : null
+    });
+  } else {
+    res.status(400).json({ error: "Process cannot be canceled or is already complete." });
+  }
 });
 
 // Token exchange endpoint

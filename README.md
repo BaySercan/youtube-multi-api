@@ -21,9 +21,13 @@ REST API to download YouTube videos as MP3/MP4 files and get video transcripts. 
 node generateKeys.js
 ```
 4. Create `.env` file with your OpenRouter API key and JWT settings:
-```
-OPENROUTER_API_KEY=your_api_key_here
+``` 
+# Required for transcript processing:
+OPENROUTER_API_KEY=your_api_key_here  
+
+# JWT configuration:
 JWT_EXPIRES_IN=1h
+JWT_ALGORITHM=RS256
 ```
 4. Start the server: `npm start`
 
@@ -125,9 +129,15 @@ Download video as MP3 file with progress tracking
 - `url` (required) - YouTube video URL
 
 **Response Headers:**
-- `X-Processing-Id`: ID for tracking progress
+- `X-Processing-Id`: ID for tracking progress and cancellation
 - `X-Video-Id`: YouTube video ID
 - `X-Video-Title`: Video title
+- `Content-Disposition`: Download filename hint (e.g., `attachment; filename="video-title.mp3"`)
+- `Content-Type`: Response MIME type (`audio/mpeg`)
+
+**Header Behavior:**  
+All response headers are sent immediately via `flushHeaders()` before processing begins.  
+This allows frontends to access the X-Processing-Id immediately for cancellation requests.
 
 **Response:** MP3 file download
 
@@ -138,9 +148,15 @@ Download video as MP4 file with progress tracking
 - `url` (required) - YouTube video URL
 
 **Response Headers:**
-- `X-Processing-Id`: ID for tracking progress
+- `X-Processing-Id`: ID for tracking progress and cancellation
 - `X-Video-Id`: YouTube video ID
 - `X-Video-Title`: Video title
+- `Content-Disposition`: Download filename hint (e.g., `attachment; filename="video-title.mp4"`)
+- `Content-Type`: Response MIME type (`video/mp4`)
+
+**Header Behavior:**  
+All response headers are sent immediately via `flushHeaders()` before processing begins.  
+This allows frontends to access the X-Processing-Id immediately for cancellation requests.
 
 **Response:** MP4 file download
 

@@ -111,6 +111,22 @@ components:
       # For simplicity, marking as a generic object:
       additionalProperties: true
 paths:
+  /test-token:
+    get:
+      summary: Get development test token
+      description: Returns a JWT token for testing (development only)
+      responses:
+        '200':
+          description: Test token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+
   /ping:
     get:
       summary: Health check endpoint
@@ -264,7 +280,7 @@ paths:
   /mp3:
     get:
       summary: Download video as MP3
-      description: Download a YouTube video as an MP3 audio file
+      description: Download a YouTube video as an MP3 audio file. Response headers are sent immediately via flushHeaders() to allow frontends to access processing IDs for cancellation requests.
       security:
         - BearerAuth: []
       parameters:
@@ -277,6 +293,22 @@ paths:
       responses:
         '200':
           description: MP3 file download
+          headers:
+            X-Processing-Id:
+              schema: { type: string }
+              description: Unique ID for progress tracking and cancellation
+            X-Video-Id:
+              schema: { type: string }
+              description: YouTube video ID
+            X-Video-Title:
+              schema: { type: string }
+              description: Video title
+            Content-Disposition:
+              schema: { type: string }
+              description: Download filename hint
+            Content-Type:
+              schema: { type: string }
+              description: Response MIME type
           content:
             audio/mpeg:
               schema:
@@ -287,7 +319,7 @@ paths:
   /mp4:
     get:
       summary: Download video as MP4
-      description: Download a YouTube video as an MP4 video file
+      description: Download a YouTube video as an MP4 video file. Response headers are sent immediately via flushHeaders() to allow frontends to access processing IDs for cancellation requests.
       security:
         - BearerAuth: []
       parameters:
@@ -300,6 +332,22 @@ paths:
       responses:
         '200':
           description: MP4 file download
+          headers:
+            X-Processing-Id:
+              schema: { type: string }
+              description: Unique ID for progress tracking and cancellation
+            X-Video-Id:
+              schema: { type: string }
+              description: YouTube video ID
+            X-Video-Title:
+              schema: { type: string }
+              description: Video title
+            Content-Disposition:
+              schema: { type: string }
+              description: Download filename hint
+            Content-Type:
+              schema: { type: string }
+              description: Response MIME type
           content:
             video/mp4:
               schema:
@@ -379,7 +427,7 @@ paths:
                 video_id: "dQw4w9WgXcQ"
                 channel_id: "UC12345678"
                 channel_name: "Example Channel"
-                post_date: "20230101"
+                post_date: "2023-01-01T00:00:00.000Z"
         '400':
           description: Invalid request or no subtitles available
           

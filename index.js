@@ -151,7 +151,8 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
     if (!apiKey || apiKey.trim() === '') {
         throw new Error('OPENROUTER_API_KEY environment variable is not set or empty');
     }
-    const model = useDeepSeek ? 'deepseek/deepseek-r1-0528:free' : 'qwen/qwen3-14b:free';
+    //const model = useDeepSeek ? 'deepseek/deepseek-r1-0528:free' : 'qwen/qwen3-14b:free';
+    const model = useDeepSeek ? 'tngtech/deepseek-r1t2-chimera:free' : 'qwen/qwen3-14b:free';
     const maxRetries = 3;
     let attempt = 0;
     while (attempt < maxRetries) {
@@ -357,11 +358,11 @@ app.get("/mp3", async (req, res) => {
     if (!url) return res.status(400).send("Missing url parameter");
     const videoUrl = Array.isArray(url) ? url[0] : url;
 
-    // Create processing job
+    // Create processing job immediately
     const processingId = uuidv4();
     const job = {
       id: processingId,
-      status: 'queued',
+      status: 'initializing',
       progress: 0,
       createdAt: Date.now(),
       lastUpdated: Date.now(),
@@ -372,17 +373,26 @@ app.get("/mp3", async (req, res) => {
     };
     processingCache.set(processingId, job);
 
+    
+
     try {
         updateProgress(processingId, 10, 'processing');
         const info = await getVideoInfo(videoUrl);
-        updateProgress(processingId, 30, 'downloading', info.id, info.title);
+        updateProgress(processingId, 20, 'validating', info.id, info.title);
         
         const fileName = `${info.title.replace(/[^\w\s.-]/gi, '')}.mp3`;
+        res.setHeader('Access-Control-Expose-Headers', 'X-Processing-Id, X-Video-Id, X-Video-Title, Content-Disposition, Content-Type'); 
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('X-Processing-Id', processingId);
         res.setHeader('X-Video-Id', info.id);
         res.setHeader('X-Video-Title', sanitizeHeaderValue(info.title));
+        res.flushHeaders();
+
+        job.video_id = info.id;
+        job.video_title = info.title;
+        job.lastUpdated = Date.now();
+        processingCache.set(processingId, job);
 
         const args = [
             '--extract-audio',
@@ -393,12 +403,13 @@ app.get("/mp3", async (req, res) => {
             '-o', '-', // Output to stdout
             videoUrl
         ];
-
+        
         const hasValidCookies = await validateCookiesFile();
         if (hasValidCookies) {
             args.push('--cookies', path.resolve(__dirname, 'cookies.txt'));
         }
 
+        updateProgress(processingId, 30, 'downloading', info.id, info.title);
         // Use Node.js spawn directly for better stream control
         const child = spawn(ytDlpWrap.binaryPath, args, {
             stdio: ['ignore', 'pipe', 'pipe']
@@ -437,11 +448,11 @@ app.get("/mp4", async (req, res) => {
     if (!url) return res.status(400).send("Missing url parameter");
     const videoUrl = Array.isArray(url) ? url[0] : url;
 
-    // Create processing job
+    // Create processing job immediately
     const processingId = uuidv4();
     const job = {
       id: processingId,
-      status: 'queued',
+      status: 'initializing',
       progress: 0,
       createdAt: Date.now(),
       lastUpdated: Date.now(),
@@ -455,14 +466,22 @@ app.get("/mp4", async (req, res) => {
     try {
         updateProgress(processingId, 10, 'processing');
         const info = await getVideoInfo(videoUrl);
-        updateProgress(processingId, 30, 'downloading', info.id, info.title);
-        
+        updateProgress(processingId, 20, 'validating', info.id, info.title);
+
         const fileName = `${info.title.replace(/[^\w\s.-]/gi, '')}.mp4`;
+        res.setHeader('Access-Control-Expose-Headers', 'X-Processing-Id, X-Video-Id, X-Video-Title, Content-Disposition, Content-Type');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('X-Processing-Id', processingId);
         res.setHeader('X-Video-Id', info.id);
         res.setHeader('X-Video-Title', sanitizeHeaderValue(info.title));
+        res.flushHeaders();
+
+        job.video_id = info.id;
+        job.video_title = info.title;
+        job.lastUpdated = Date.now();
+        processingCache.set(processingId, job);
+        updateProgress(processingId, 30, 'downloading', info.id, info.title);
 
         const args = [
             '--format', 'mp4',
@@ -612,7 +631,7 @@ app.get("/transcript", async (req, res) => {
 
                 // First pass - clean up and format
                 const firstResponse = await callAIModel(messages, useDeepSeek, abortController.signal);
-                updateProgress(processingId, 50, 'Cleaning up transcript with AI ...');
+                updateProgress(processingId, 75, 'Cleaning up transcript with AI ...');
                 
                 // Update processor if we switched to backup model
                 if (firstResponse.modelUsed === 'qwen') {
@@ -639,7 +658,7 @@ app.get("/transcript", async (req, res) => {
                 ];
 
                 const finalResponse = await callAIModel(cleanupMessages, useDeepSeek, abortController.signal);
-                updateProgress(processingId, 60, 'Finalizing transcript with AI model...');
+                updateProgress(processingId, 80, 'Finalizing transcript with AI model...');
 
                 // After getting finalResponse, split transcript and notes if needed
                 let transcriptText = finalResponse.choices[0].message.content.trim();
@@ -648,7 +667,7 @@ app.get("/transcript", async (req, res) => {
                     transcriptText = main.trim();
                     aiNotes = notes.join('NOTE:').trim();
                 }
-                updateProgress(processingId, 70, 'AI processing complete');
+                updateProgress(processingId, 85, 'AI processing complete');
                 finalTranscript = transcriptText;
 
             } catch (error) {
@@ -664,10 +683,9 @@ app.get("/transcript", async (req, res) => {
             finalTranscript = cleanedLines.join(' ');
         }
 
-      updateProgress(processingId, 80, 'Finalizing transcript...');
+      updateProgress(processingId, 90, 'Finalizing transcript...');
       const isProcessed = !skipAI && finalTranscript && finalTranscript.trim().length > 0;
 
-      updateProgress(processingId, 90, 'Processing complete');
       updateProgress(processingId, 100, 'Completed');
       job.result = {
         success: true,
@@ -752,9 +770,8 @@ app.get("/result/:id", (req, res) => {
 
 // New endpoint to cancel a running process
 app.post("/cancel/:id", async (req, res) => {
-  const glob = require('glob').glob;
   const { promisify } = require('util');
-  const asyncGlob = promisify(glob);
+  const asyncGlob = promisify(require('glob').glob);
   const job = processingCache.get(req.params.id);
   if (!job) {
     return res.status(404).json({ error: "Processing ID not found" });
@@ -763,11 +780,18 @@ app.post("/cancel/:id", async (req, res) => {
   // Add queue position information
   const position = processingQueue.size + 1;
   
-  if (job.child) {
+  if (job.status === 'initializing') {
+    updateProgress(req.params.id, 0, 'canceled');
+    return res.status(200).json({ 
+      message: "Cancelled during initialization",
+      video_id: job.video_id,
+      queue_position: position
+    });
+  } else if (job.child) {
     job.child.kill('SIGKILL');
     // Cleanup temp files
     const tempPattern = path.join(tempDir, `*${job.video_id}*`);
-    const files = await glob(tempPattern);
+    const files = await asyncGlob(tempPattern);
     await Promise.all(files.map(f => fs.unlink(f).catch(() => {})));
     updateProgress(req.params.id, 100, 'canceled');
     res.status(200).json({ 

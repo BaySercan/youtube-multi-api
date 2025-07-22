@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: YouTube Multi API
   description: API for downloading YouTube videos as MP3/MP4 and getting AI-processed transcripts
-  version: 1.0.0
+  version: 2.1.0
   contact:
     name: BaySercan
     url: https://github.com/BaySercan/youtube-multi-api
@@ -14,6 +14,7 @@ servers:
     
 security:
   - BearerAuth: []
+  - RapidAPI: []
     
 components:
   securitySchemes:
@@ -21,6 +22,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    RapidAPI:
+      type: apiKey
+      in: header
+      name: x-rapidapi-proxy-secret
+      description: RapidAPI proxy secret
   schemas:
     VideoInfoSummary:
       type: object

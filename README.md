@@ -11,7 +11,7 @@ REST API to download YouTube videos as MP3/MP4 files and get video transcripts. 
 - Do not rely on long-term result availability
 
 ## API Base URL
-`https://youtube-multi-api.onrender.com`
+`https://p01--youtube-multi-api-private-srv--yfb9ttcdx8bx.code.run`
 
 ## Installation
 1. Clone the repository
@@ -32,22 +32,49 @@ JWT_ALGORITHM=RS256
 4. Start the server: `npm start`
 
 ## Authentication
-All endpoints except `/ping` and `/test-token` require JWT authentication.
+All endpoints except `/ping`, `/test-token`, and `/auth/exchange-token` require authentication. The API supports two authentication methods:
 
-### Getting a Test Token (Development Only)
-`GET /test-token`  
-Returns a JWT token for testing in development environment.
+### 1. JWT Authentication
+- **Getting a Test Token (Development Only):**  
+  `GET /test-token`  
+  Returns a JWT token for testing in development environment.
+
+  **Response:**
+  ```json
+  {
+    "token": "your_jwt_token_here"
+  }
+  ```
+
+- **Using the Token:**  
+  Include the token in the Authorization header:  
+  `Authorization: Bearer <your_token>`
+
+### 2. RapidAPI Authentication
+- **Required Headers:**
+  - `x-rapidapi-proxy-secret`: Your RapidAPI proxy secret
+  - `x-rapidapi-user`: Your RapidAPI user identifier
+
+- **Note:** In development mode (`NODE_ENV=development`), RapidAPI authentication is automatically bypassed.
+
+### Token Exchange Endpoint
+`POST /auth/exchange-token`  
+Exchange your Supabase access token for a custom JWT token (for Supabase users)
+
+**Request Body:**
+```json
+{
+  "supabaseAccessToken": "your_supabase_access_token"
+}
+```
 
 **Response:**
 ```json
 {
-  "token": "your_jwt_token_here"
+  "apiToken": "generated_jwt_token",
+  "expiresIn": 3600
 }
 ```
-
-### Using the Token
-Include the token in the Authorization header:  
-`Authorization: Bearer <your_token>`
 
 ## API Endpoints
 

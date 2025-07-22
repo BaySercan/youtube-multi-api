@@ -10,12 +10,17 @@ const authRouter = (req, res, next) => {
         return next();
     }
 
-    // Check for RapidAPI key header
-    if (req.headers['x-rapidapi-key']) {
+    // Get RapidAPI key from either header format
+    const rapidApiKey = req.headers['x-rapidapi-key'] || req.headers['x-rapidapi-proxy-secret'];
+
+    // Check for RapidAPI key first
+    if (rapidApiKey) {
+        console.log('RapidAPI request detected');
         return rapidAuth(req, res, next);
     }
     
-    // Otherwise, use JWT authentication
+    // If no RapidAPI key, check for JWT
+    console.log('Checking JWT authentication');
     return jwtAuth(req, res, next);
 };
 

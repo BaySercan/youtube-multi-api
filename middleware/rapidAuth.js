@@ -1,5 +1,6 @@
 const rapidAuth = (req, res, next) => {
-    const rapidApiKey = req.headers['x-rapidapi-key'];
+    // Get RapidAPI key from either header format
+    const rapidApiKey = req.headers['x-rapidapi-key'] || req.headers['x-rapidapi-proxy-secret'];
 
     // Check if RapidAPI key is present
     if (!rapidApiKey) {
@@ -16,6 +17,7 @@ const rapidAuth = (req, res, next) => {
     }
 
     // If authentication successful
+    console.log('RapidAPI authentication successful');
     next();
 };
 

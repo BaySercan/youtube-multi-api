@@ -101,6 +101,13 @@ async function validateCookiesFile() {
 const app = express();
 app.use(cors());
 
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  next();
+});
+
 // Initialize Supabase client
 const supabaseAdmin = createClient(
   process.env.VITE_SUPABASE_URL, 

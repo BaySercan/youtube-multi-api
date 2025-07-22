@@ -6,7 +6,7 @@ const { promises: fs } = require("fs");
 const path = require("path");
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
-const jwtAuth = require('./middleware/jwtAuth');
+const authRouter = require('./middleware/authRouter');
 const { createClient } = require('@supabase/supabase-js');
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
@@ -107,16 +107,9 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 );
 
-// Apply JWT authentication to all routes except /ping, /test-token and /auth/exchange-token
-// This allows these endpoints to be accessible without authentication
-app.use((req, res, next) => {
-  if (req.path === '/ping' || 
-      req.path === '/test-token' || 
-      req.path === '/auth/exchange-token') {
-    return next();
-  }
-  jwtAuth(req, res, next);
-});
+// Apply authentication router to all routes
+// This will handle both RapidAPI and JWT authentication
+app.use(authRouter);
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");

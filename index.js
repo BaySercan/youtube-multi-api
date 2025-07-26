@@ -284,7 +284,7 @@ app.get("/test-token", (req, res) => {
 });
 
 app.get("/ping", (req, res) => {
-    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+    res.status(200).json({ status: "OK", timestamp: new Date().toISOString(), version:"2.1.0" });
 });
 app.get("/validate-cookies", async (req, res) => {
     // This endpoint remains the same
@@ -308,9 +308,15 @@ app.get("/info", async (req, res) => {
 
     try {
         const info = await getVideoInfo(Array.isArray(url) ? url[0] : url);
+        const lastRequested = new Date().toISOString();
 
         if (type === "full") {
-            res.send(info);
+            // Add last_requested to full info response
+            const fullInfo = {
+                ...info,
+                last_requested: lastRequested
+            };
+            res.send(fullInfo);
         } else { // Default to summary ("sum")
             const summaryInfo = {
                 availability: info.availability,
@@ -344,6 +350,7 @@ app.get("/info", async (req, res) => {
                 view_count: info.view_count,
                 video_id: info.id, // Changed from id
                 was_live: info.was_live,
+                last_requested: lastRequested
             };
             res.send(summaryInfo);
         }
@@ -700,7 +707,8 @@ app.get("/transcript", async (req, res) => {
         channel_name: info.channel,
         post_date: new Date(
             `${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`
-        ).toISOString()
+        ).toISOString(),
+        last_requested: new Date().toISOString()
       };
     } catch (error) {
       if (error.name === 'AbortError') {

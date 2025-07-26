@@ -86,7 +86,7 @@ Health check endpoint (no authentication required)
 {
   "status": "ok",
   "timestamp": "current ISO timestamp",
-  "version": "1.0.0"
+  "version": "2.1.0"
 }
 ```
 

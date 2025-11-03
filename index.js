@@ -579,8 +579,9 @@ app.get("/transcript", async (req, res) => {
       const info = await getVideoInfo(videoUrl, { signal: abortController.signal });
       
       updateProgress(processingId, 20, 'Fetching raw transcript...');
+      const { lang = info.language } = req.query;
       const transcriptXml = await getVideoTranscript(videoUrl, lang, abortController.signal);
-      
+
       updateProgress(processingId, 30, 'Fetching raw transcript is complete');
         
         // Parse transcript (supports XML and WebVTT formats)

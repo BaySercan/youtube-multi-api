@@ -7,3 +7,4 @@ bin/
 cookies.txt
 .venv
 keys/
+.idea

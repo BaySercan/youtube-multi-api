@@ -152,7 +152,9 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
         throw new Error('OPENROUTER_API_KEY environment variable is not set or empty');
     }
     //const model = useDeepSeek ? 'deepseek/deepseek-r1-0528:free' : 'qwen/qwen3-14b:free';
-    const model = useDeepSeek ? 'tngtech/deepseek-r1t2-chimera:free' : 'qwen/qwen3-14b:free';
+    //const model = useDeepSeek ? 'tngtech/deepseek-r1t2-chimera:free' : 'qwen/qwen3-14b:free';
+    //const model = useDeepSeek ? 'openai/gpt-oss-20b:free' : 'qwen/qwen3-14b:free'; //BAD
+    const model = useDeepSeek ? 'minimax/minimax-m2:free' : 'nvidia/nemotron-nano-12b-v2-vl:free';
     const maxRetries = 3;
     let attempt = 0;
     while (attempt < maxRetries) {
@@ -314,7 +316,8 @@ app.get("/info", async (req, res) => {
             // Add last_requested to full info response
             const fullInfo = {
                 ...info,
-                last_requested: lastRequested
+                last_requested: lastRequested,
+                info_type: "full", // Indicate this is full info
             };
             res.send(fullInfo);
         } else { // Default to summary ("sum")
@@ -350,7 +353,8 @@ app.get("/info", async (req, res) => {
                 view_count: info.view_count,
                 video_id: info.id, // Changed from id
                 was_live: info.was_live,
-                last_requested: lastRequested
+                last_requested: lastRequested,
+                info_type: "sum" // Indicate this is summary info
             };
             res.send(summaryInfo);
         }
@@ -693,7 +697,9 @@ app.get("/transcript", async (req, res) => {
       updateProgress(processingId, 90, 'Finalizing transcript...');
       const isProcessed = !skipAI && finalTranscript && finalTranscript.trim().length > 0;
 
-      updateProgress(processingId, 100, 'Completed');
+      updateProgress(processingId, 100, 'completed');
+      const lastRequested = new Date().toISOString();
+      console.log(`Setting last_requested for transcript job ${processingId}:`, lastRequested);
       job.result = {
         success: true,
         title: info.title,
@@ -708,8 +714,9 @@ app.get("/transcript", async (req, res) => {
         post_date: new Date(
             `${info.upload_date.substring(0,4)}-${info.upload_date.substring(4,6)}-${info.upload_date.substring(6,8)}`
         ).toISOString(),
-        last_requested: new Date().toISOString()
+        last_requested: lastRequested
       };
+      console.log(`Transcript job ${processingId} result set with last_requested:`, job.result.last_requested);
     } catch (error) {
       if (error.name === 'AbortError') {
         console.log(`Transcript job ${processingId} was canceled.`);
@@ -765,14 +772,20 @@ app.get("/result/:id", (req, res) => {
   if (!job) {
     return res.status(404).json({ error: "Processing ID not found" });
   }
-  if (job.progress !== 100 || job.status !== 'Completed') {
+  if (job.progress !== 100 || job.status.toLowerCase() !== 'completed') {
     return res.status(202).json({
       message: "Processing not complete",
       status: job.status,
       progress: job.progress
     });
   }
-  console.log(`Returning result for processing ID: ${job.id} - Status: ${job.status} - Progress: ${job.progress} - Result: ${job.result}`);
+  console.log(`Returning result for processing ID: ${job.id} - Status: ${job.status} - Progress: ${job.progress}`);
+  console.log(`Result object keys:`, job.result ? Object.keys(job.result) : 'null');
+  if (job.result && job.result.last_requested) {
+    console.log(`last_requested value:`, job.result.last_requested);
+  } else if (job.result) {
+    console.log(`last_requested is missing from result`);
+  }
   res.status(200).json(job.result);
 });
 

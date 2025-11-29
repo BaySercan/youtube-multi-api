@@ -151,10 +151,7 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
     if (!apiKey || apiKey.trim() === '') {
         throw new Error('OPENROUTER_API_KEY environment variable is not set or empty');
     }
-    //const model = useDeepSeek ? 'deepseek/deepseek-r1-0528:free' : 'qwen/qwen3-14b:free';
-    //const model = useDeepSeek ? 'tngtech/deepseek-r1t2-chimera:free' : 'qwen/qwen3-14b:free';
-    //const model = useDeepSeek ? 'openai/gpt-oss-20b:free' : 'qwen/qwen3-14b:free'; //BAD
-    const model = useDeepSeek ? 'minimax/minimax-m2:free' : 'nvidia/nemotron-nano-12b-v2-vl:free';
+    const model = useDeepSeek ? process.env.AI_MODEL_1 : process.env.AI_MODEL_2;
     const maxRetries = 3;
     let attempt = 0;
     while (attempt < maxRetries) {

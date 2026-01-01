@@ -293,19 +293,64 @@ async function getVideoInfo(url, options = {}, retries = 3) {
   }
 }
 
+// Helper function to find available language tracks with fallback support
+function findLanguageTracks(info, lang) {
+  const captions = info.automatic_captions || {};
+  const subtitles = info.subtitles || {};
+
+  // Try exact match first
+  let tracks = captions[lang] || subtitles[lang] || [];
+  if (tracks.length > 0) return { tracks, usedLang: lang };
+
+  // Extract base language (e.g., "en" from "en-US")
+  const baseLang = lang.split("-")[0];
+
+  // Try base language if different from original
+  if (baseLang !== lang) {
+    tracks = captions[baseLang] || subtitles[baseLang] || [];
+    if (tracks.length > 0) return { tracks, usedLang: baseLang };
+  }
+
+  // Try language variants (e.g., "en-orig", "en-GB" when "en" or "en-US" requested)
+  const availableLangs = [
+    ...new Set([...Object.keys(captions), ...Object.keys(subtitles)]),
+  ];
+  const variants = availableLangs.filter(
+    (l) => l.startsWith(baseLang + "-") || l === baseLang + "-orig"
+  );
+
+  for (const variant of variants) {
+    tracks = captions[variant] || subtitles[variant] || [];
+    if (tracks.length > 0) return { tracks, usedLang: variant };
+  }
+
+  return { tracks: [], usedLang: null };
+}
+
 // Helper function to get video transcript
 async function getVideoTranscript(url, lang = "tr", signal) {
   const info = await getVideoInfo(url, { signal });
-  const tracks =
-    info.automatic_captions?.[lang] || info.subtitles?.[lang] || [];
+
+  const { tracks, usedLang } = findLanguageTracks(info, lang);
+
   if (tracks.length === 0) {
-    const availableLangs = Object.keys(info.automatic_captions || {});
+    const availableLangs = [
+      ...new Set([
+        ...Object.keys(info.automatic_captions || {}),
+        ...Object.keys(info.subtitles || {}),
+      ]),
+    ];
     throw new Error(
       `No subtitles available for language: ${lang}. Available: ${availableLangs.join(
         ", "
       )}`
     );
   }
+
+  if (usedLang !== lang) {
+    logger.info("Language fallback used", { requested: lang, used: usedLang });
+  }
+
   const track =
     tracks.find(
       (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1"

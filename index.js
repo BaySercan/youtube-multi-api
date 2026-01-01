@@ -57,7 +57,7 @@ async function initializeServer() {
     timeout: 30 * 60 * 1000, // 30 minutes (adjust based on expected download times)
     throwOnTimeout: true, // Whether to throw an error if a task times out
   });
-  logger.info("Processing queue initialized", {
+  logger.server("Processing queue initialized", {
     concurrency: 4,
     intervalCap: 5,
   });
@@ -65,7 +65,7 @@ async function initializeServer() {
   // Server listening logic
   const PORT = process.env.PORT || 3500;
   app.listen(PORT, "0.0.0.0", () => {
-    logger.info("Server started", {
+    logger.server("Server started", {
       port: PORT,
       env: process.env.NODE_ENV || "development",
     });
@@ -251,7 +251,7 @@ async function getVideoInfo(url, options = {}, retries = 3) {
       if (options.signal && options.signal.aborted) {
         throw new Error("The operation was aborted.");
       }
-      console.log(`Fetching video info for: ${url}`);
+      logger.video(`Fetching video info for: ${url}`);
       const args = [
         "--dump-json",
         "--no-warnings",
@@ -272,7 +272,7 @@ async function getVideoInfo(url, options = {}, retries = 3) {
         signal: options.signal,
       });
       const info = JSON.parse(stdout);
-      logger.info("Video info fetched", {
+      logger.video("Video info fetched", {
         videoId: info.id,
         title: info.title,
       });

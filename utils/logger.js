@@ -28,6 +28,19 @@ const level = () => {
   return env === "development" ? "debug" : "info";
 };
 
+// Emoji prefixes for visual log categorization
+const emojis = {
+  auth: "🔐",
+  authWarn: "⚠️",
+  video: "🎬",
+  ai: "🤖",
+  download: "📥",
+  server: "🚀",
+  error: "❌",
+  success: "✅",
+  info: "ℹ️",
+};
+
 // Custom format for console output (development)
 const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
@@ -115,12 +128,42 @@ logger.jobError = (processingId, message, error, meta = {}) => {
   });
 };
 
-logger.ai = (message, meta = {}) => {
-  logger.info(`[AI] ${message}`, meta);
+// Auth logging helpers
+logger.auth = (message, meta = {}) => {
+  logger.info(`${emojis.auth} ${message}`, meta);
 };
 
+logger.authWarn = (message, meta = {}) => {
+  logger.warn(`${emojis.authWarn} ${message}`, meta);
+};
+
+logger.authDebug = (message, meta = {}) => {
+  logger.debug(`${emojis.auth} ${message}`, meta);
+};
+
+// AI logging helper
+logger.ai = (message, meta = {}) => {
+  logger.info(`${emojis.ai} ${message}`, meta);
+};
+
+// yt-dlp / download logging helper
 logger.ytdlp = (message, meta = {}) => {
-  logger.debug(`[yt-dlp] ${message}`, meta);
+  logger.debug(`${emojis.download} ${message}`, meta);
+};
+
+// Video operations helper
+logger.video = (message, meta = {}) => {
+  logger.info(`${emojis.video} ${message}`, meta);
+};
+
+// Server lifecycle helper
+logger.server = (message, meta = {}) => {
+  logger.info(`${emojis.server} ${message}`, meta);
+};
+
+// Success helper
+logger.success = (message, meta = {}) => {
+  logger.info(`${emojis.success} ${message}`, meta);
 };
 
 module.exports = logger;

@@ -327,36 +327,155 @@ function findLanguageTracks(info, lang) {
   return { tracks: [], usedLang: null };
 }
 
+// Helper function to fetch auto-subs using yt-dlp directly
+async function fetchAutoSubsWithYtDlp(url, lang, signal) {
+  const uniqueId = `subs_${Date.now()}_${Math.random()
+    .toString(36)
+    .substring(7)}`;
+  const subtitlePath = path.join(tempDir, uniqueId);
+
+  const args = [
+    "--skip-download",
+    "--write-auto-subs",
+    "--sub-lang",
+    lang,
+    "--sub-format",
+    "ttml/srv1/vtt/best",
+    "--convert-subs",
+    "vtt",
+    "--no-warnings",
+    "--no-check-certificates",
+    "--user-agent",
+    USER_AGENT,
+    "-o",
+    subtitlePath,
+    url,
+  ];
+
+  const hasValidCookies = await validateCookiesFile();
+  if (hasValidCookies) {
+    args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
+  }
+
+  try {
+    logger.info("Attempting to fetch auto-subs with yt-dlp", { url, lang });
+    await ytDlpWrap.execPromise(args, { signal });
+
+    // yt-dlp generates files like: {output}.{lang}.vtt
+    // Find any file that starts with our unique ID and ends with subtitle extension
+    const files = await fs.readdir(tempDir);
+    const subtitleFile = files.find(
+      (f) =>
+        f.startsWith(uniqueId) &&
+        (f.endsWith(".vtt") ||
+          f.endsWith(".ttml") ||
+          f.endsWith(".srv1") ||
+          f.endsWith(".srt"))
+    );
+
+    if (subtitleFile) {
+      const subtitleContent = await fs.readFile(
+        path.join(tempDir, subtitleFile),
+        "utf8"
+      );
+      // Clean up the temp file
+      await fs.unlink(path.join(tempDir, subtitleFile)).catch(() => {});
+      logger.info("Successfully fetched auto-subs with yt-dlp fallback", {
+        file: subtitleFile,
+      });
+      return subtitleContent;
+    }
+
+    logger.warn("yt-dlp ran but no subtitle file was generated", {
+      uniqueId,
+      lang,
+    });
+    return null;
+  } catch (error) {
+    logger.warn("yt-dlp auto-subs fallback failed", { error: error.message });
+    return null;
+  }
+}
+
 // Helper function to get video transcript
 async function getVideoTranscript(url, lang = "tr", signal) {
   const info = await getVideoInfo(url, { signal });
 
   const { tracks, usedLang } = findLanguageTracks(info, lang);
 
-  if (tracks.length === 0) {
-    const availableLangs = [
-      ...new Set([
-        ...Object.keys(info.automatic_captions || {}),
-        ...Object.keys(info.subtitles || {}),
-      ]),
-    ];
-    throw new Error(
-      `No subtitles available for language: ${lang}. Available: ${availableLangs.join(
-        ", "
-      )}`
+  // If we found tracks from video info, use them
+  if (tracks.length > 0) {
+    if (usedLang !== lang) {
+      logger.info("Language fallback used", {
+        requested: lang,
+        used: usedLang,
+      });
+    }
+
+    const track =
+      tracks.find(
+        (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1"
+      ) || tracks[0];
+    const transcriptResponse = await axios.get(track.url, { signal });
+    return transcriptResponse.data;
+  }
+
+  // No tracks found in video info, try yt-dlp --write-auto-subs as fallback
+  logger.info(
+    "No captions in video info, attempting yt-dlp auto-subs fallback",
+    {
+      videoId: info.id,
+      requestedLang: lang,
+    }
+  );
+
+  const autoSubsContent = await fetchAutoSubsWithYtDlp(url, lang, signal);
+
+  if (autoSubsContent) {
+    return autoSubsContent;
+  }
+
+  // If still no captions, try with base language (e.g., "tr" from "tr-TR")
+  const baseLang = lang.split("-")[0];
+  if (baseLang !== lang) {
+    const baseAutoSubsContent = await fetchAutoSubsWithYtDlp(
+      url,
+      baseLang,
+      signal
     );
+    if (baseAutoSubsContent) {
+      return baseAutoSubsContent;
+    }
   }
 
-  if (usedLang !== lang) {
-    logger.info("Language fallback used", { requested: lang, used: usedLang });
+  // All attempts failed - provide detailed error message
+  const availableLangs = [
+    ...new Set([
+      ...Object.keys(info.automatic_captions || {}),
+      ...Object.keys(info.subtitles || {}),
+    ]),
+  ];
+
+  const hasAnyCaptions = availableLangs.length > 0;
+
+  let errorMessage;
+  if (!hasAnyCaptions) {
+    errorMessage =
+      `NO_CAPTIONS_AVAILABLE: This video has no captions or subtitles available. ` +
+      `Possible reasons: (1) The video creator has disabled auto-generated captions, ` +
+      `(2) YouTube's speech recognition doesn't support the video's language well, ` +
+      `(3) The audio quality is insufficient for auto-captioning, ` +
+      `(4) The video was recently uploaded and captions haven't been generated yet. ` +
+      `Video ID: ${info.id}, Title: "${info.title}"`;
+  } else {
+    errorMessage =
+      `LANGUAGE_NOT_AVAILABLE: No subtitles available for language: "${lang}". ` +
+      `Available languages: [${availableLangs.join(", ")}]. ` +
+      `Try requesting one of the available languages instead. ` +
+      `Video ID: ${info.id}`;
   }
 
-  const track =
-    tracks.find(
-      (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1"
-    ) || tracks[0];
-  const transcriptResponse = await axios.get(track.url, { signal });
-  return transcriptResponse.data;
+  throw new Error(errorMessage);
 }
 
 // Routes

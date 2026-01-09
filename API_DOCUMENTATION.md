@@ -416,12 +416,43 @@ Exchange a Supabase access token for an API JWT token.
 
 ### Common Errors
 
-| Error                        | Cause                 | Solution                          |
-| ---------------------------- | --------------------- | --------------------------------- |
-| `Missing url parameter`      | URL not provided      | Include `url` query parameter     |
-| `Processing ID not found`    | Invalid or expired ID | Use a valid processing ID         |
-| `No subtitles available`     | Video has no captions | Try a different language or video |
-| `Process cannot be canceled` | Already completed     | No action needed                  |
+| Error                        | Cause                            | Solution                                                            |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------------------- |
+| `Missing url parameter`      | URL not provided                 | Include `url` query parameter                                       |
+| `Processing ID not found`    | Invalid or expired ID            | Use a valid processing ID                                           |
+| `NO_CAPTIONS_AVAILABLE`      | Video has no captions at all     | See [Transcript Troubleshooting](#transcript-troubleshooting) below |
+| `LANGUAGE_NOT_AVAILABLE`     | Requested language not available | Use one of the available languages listed in error                  |
+| `Process cannot be canceled` | Already completed                | No action needed                                                    |
+
+### Transcript Troubleshooting
+
+When requesting a transcript, you may encounter these specific error types:
+
+#### `NO_CAPTIONS_AVAILABLE`
+
+This error indicates that the video has **absolutely no captions or subtitles** available - neither manual nor auto-generated. Common causes:
+
+1. **Creator disabled auto-captions**: Video creators can turn off automatic caption generation in YouTube Studio
+2. **Language not supported**: YouTube's speech recognition may not support the video's spoken language
+3. **Poor audio quality**: Background music, multiple speakers, or low-quality audio can prevent auto-captioning
+4. **Recently uploaded**: Auto-generated captions can take several hours to appear after upload
+5. **Private/unlisted restrictions**: Some video settings may prevent caption extraction
+
+**What to try:**
+
+- Wait and retry later if the video was recently uploaded
+- Check if the video has captions when viewing directly on YouTube
+- Contact the video creator to enable captions
+
+#### `LANGUAGE_NOT_AVAILABLE`
+
+This error means captions exist, but not for your requested language. The error message will include a list of available languages.
+
+**What to try:**
+
+- Use one of the available languages listed in the error message
+- If `en` is unavailable, try `en-US`, `en-GB`, or other variants
+- The API automatically tries language fallbacks (e.g., `en` if `en-US` is unavailable)
 
 ---
 
@@ -606,7 +637,8 @@ curl --request GET \
 - **Streaming**: MP3/MP4 files are streamed directly without server storage
 - **Ephemeral Progress**: Progress data is not persisted - poll promptly for results
 - **Video Availability**: Some videos may be region-locked or unavailable for download
-- **Subtitle Requirement**: Transcript extraction requires the video to have captions enabled
+- **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction, but ultimately depends on YouTube having generated captions for the video
+- **Language Fallback**: The API automatically tries language variants (e.g., `en` → `en-US` → `en-GB`) when the exact requested language isn't available
 
 ---
 

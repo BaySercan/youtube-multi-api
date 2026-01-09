@@ -438,11 +438,13 @@ This error indicates that the video has **absolutely no captions or subtitles** 
 4. **Recently uploaded**: Auto-generated captions can take several hours to appear after upload
 5. **Private/unlisted restrictions**: Some video settings may prevent caption extraction
 
+> 💡 **Whisper STT Fallback**: When YouTube captions are unavailable, the API automatically attempts to transcribe the video using OpenAI's Whisper speech-to-text model (if `OPENAI_API_KEY` is configured). This incurs a cost of approximately **$0.006 per minute** of audio.
+
 **What to try:**
 
 - Wait and retry later if the video was recently uploaded
 - Check if the video has captions when viewing directly on YouTube
-- Contact the video creator to enable captions
+- Ensure `OPENAI_API_KEY` is configured for Whisper fallback
 
 #### `LANGUAGE_NOT_AVAILABLE`
 
@@ -637,7 +639,8 @@ curl --request GET \
 - **Streaming**: MP3/MP4 files are streamed directly without server storage
 - **Ephemeral Progress**: Progress data is not persisted - poll promptly for results
 - **Video Availability**: Some videos may be region-locked or unavailable for download
-- **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction, but ultimately depends on YouTube having generated captions for the video
+- **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction
+- **Whisper STT Fallback**: When YouTube captions are unavailable and `OPENAI_API_KEY` is configured, the API uses OpenAI Whisper for speech-to-text transcription (~$0.006/min)
 - **Language Fallback**: The API automatically tries language variants (e.g., `en` → `en-US` → `en-GB`) when the exact requested language isn't available
 
 ---

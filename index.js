@@ -2,7 +2,7 @@ require("dotenv").config();
 const { spawn } = require("child_process");
 const express = require("express");
 const cors = require("cors");
-const { promises: fs } = require("fs");
+const { promises: fs, createReadStream } = require("fs");
 const path = require("path");
 const axios = require("axios");
 const jwt = require("jsonwebtoken");
@@ -10,9 +10,18 @@ const authRouter = require("./middleware/authRouter");
 const requestIdMiddleware = require("./middleware/requestId");
 const { createClient } = require("@supabase/supabase-js");
 const logger = require("./utils/logger");
+const OpenAI = require("openai");
+const {
+  fetchTranscript: fetchYTTranscript,
+} = require("youtube-transcript-plus");
 
 const YTDlpWrap = require("yt-dlp-wrap").default;
 const { v4: uuidv4 } = require("uuid");
+
+// Initialize OpenAI client for Whisper API
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // Sanitize HTTP header values by removing non-ASCII characters
 function sanitizeHeaderValue(value) {
@@ -201,6 +210,7 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
         {
           model: model,
           messages: messages,
+          max_tokens: 16384, // Request maximum output tokens to prevent truncation
         },
         {
           headers: {
@@ -213,6 +223,25 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
         }
       );
       if (response.data && response.data.choices && response.data.choices[0]) {
+        const choice = response.data.choices[0];
+        const outputLength = choice.message?.content?.length || 0;
+        const finishReason = choice.finish_reason;
+
+        logger.ai("AI response received", {
+          model,
+          outputLength,
+          finishReason,
+          truncated: finishReason === "length",
+        });
+
+        // Warn if response was truncated due to length
+        if (finishReason === "length") {
+          logger.warn("AI response was truncated due to token limit", {
+            model,
+            outputLength,
+          });
+        }
+
         return response.data;
       } else {
         throw new Error("Invalid API response format");
@@ -397,6 +426,102 @@ async function fetchAutoSubsWithYtDlp(url, lang, signal) {
   }
 }
 
+// Helper function to extract audio for Whisper transcription
+async function extractAudioForWhisper(url, signal) {
+  const uniqueId = `whisper_${Date.now()}_${Math.random()
+    .toString(36)
+    .substring(7)}`;
+  const audioPath = path.join(tempDir, `${uniqueId}.mp3`);
+
+  // Use high compression to keep file under 25MB limit
+  // For a 33-min video: 64kbps mono = ~16MB, well under limit
+  const args = [
+    "--extract-audio",
+    "--audio-format",
+    "mp3",
+    "--postprocessor-args",
+    "ffmpeg:-ac 1 -ar 16000 -b:a 64k", // Mono, 16kHz, 64kbps - optimized for speech
+    "--no-warnings",
+    "--no-check-certificates",
+    "--user-agent",
+    USER_AGENT,
+    "-o",
+    audioPath,
+    url,
+  ];
+
+  const hasValidCookies = await validateCookiesFile();
+  if (hasValidCookies) {
+    args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
+  }
+
+  try {
+    logger.info("Extracting audio for Whisper transcription", { url });
+    await ytDlpWrap.execPromise(args, { signal });
+
+    // Verify file exists
+    await fs.access(audioPath);
+    const stats = await fs.stat(audioPath);
+
+    const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+    logger.info("Audio extracted successfully", {
+      path: audioPath,
+      size: stats.size,
+      sizeMB: fileSizeMB,
+    });
+
+    // Whisper API has a 25MB file size limit
+    if (stats.size > 25 * 1024 * 1024) {
+      logger.error("Audio file still too large after compression", {
+        sizeMB: fileSizeMB,
+        limit: "25MB",
+      });
+      await fs.unlink(audioPath).catch(() => {});
+      return null;
+    }
+
+    return audioPath;
+  } catch (error) {
+    logger.error("Failed to extract audio for Whisper", {
+      error: error.message,
+    });
+    return null;
+  }
+}
+
+// Helper function to transcribe audio using OpenAI Whisper API
+async function transcribeWithWhisper(audioPath, lang = "tr") {
+  if (!openai) {
+    logger.warn("OpenAI client not initialized - OPENAI_API_KEY not set");
+    return null;
+  }
+
+  try {
+    logger.info("Transcribing with Whisper API", { audioPath, lang });
+
+    const transcription = await openai.audio.transcriptions.create({
+      file: createReadStream(audioPath),
+      model: "whisper-1",
+      language: lang.split("-")[0], // Whisper uses 2-letter codes
+      response_format: "text",
+    });
+
+    // Clean up audio file after transcription
+    await fs.unlink(audioPath).catch(() => {});
+
+    logger.info("Whisper transcription completed", {
+      transcriptLength: transcription.length,
+    });
+
+    return transcription;
+  } catch (error) {
+    logger.error("Whisper transcription failed", { error: error.message });
+    // Clean up audio file on error
+    await fs.unlink(audioPath).catch(() => {});
+    return null;
+  }
+}
+
 // Helper function to get video transcript
 async function getVideoTranscript(url, lang = "tr", signal) {
   const info = await getVideoInfo(url, { signal });
@@ -420,14 +545,44 @@ async function getVideoTranscript(url, lang = "tr", signal) {
     return transcriptResponse.data;
   }
 
-  // No tracks found in video info, try yt-dlp --write-auto-subs as fallback
-  logger.info(
-    "No captions in video info, attempting yt-dlp auto-subs fallback",
-    {
+  // No tracks found in video info, try youtube-transcript-plus (fast, uses YouTube's internal API)
+  try {
+    logger.info("No captions in video info, trying youtube-transcript-plus", {
       videoId: info.id,
       requestedLang: lang,
+    });
+
+    const baseLang = lang.split("-")[0];
+    const ytTranscript = await fetchYTTranscript(info.id, { lang: baseLang });
+
+    if (ytTranscript && ytTranscript.length > 0) {
+      // Convert to text format
+      const transcriptText = ytTranscript
+        .map((segment) => segment.text)
+        .join(" ");
+      logger.info(
+        "Successfully fetched transcript via youtube-transcript-plus",
+        {
+          videoId: info.id,
+          segments: ytTranscript.length,
+        }
+      );
+      return transcriptText;
     }
-  );
+  } catch (ytError) {
+    // Log but continue to next fallback
+    logger.warn("youtube-transcript-plus fallback failed", {
+      videoId: info.id,
+      error: ytError.message,
+      errorType: ytError.constructor.name,
+    });
+  }
+
+  // youtube-transcript-plus failed, try yt-dlp --write-auto-subs as second fallback
+  logger.info("Trying yt-dlp auto-subs fallback", {
+    videoId: info.id,
+    requestedLang: lang,
+  });
 
   const autoSubsContent = await fetchAutoSubsWithYtDlp(url, lang, signal);
 
@@ -448,6 +603,31 @@ async function getVideoTranscript(url, lang = "tr", signal) {
     }
   }
 
+  // All YouTube caption methods failed - try Whisper STT as final fallback
+  if (openai) {
+    logger.info(
+      "No YouTube captions available, attempting Whisper STT fallback",
+      {
+        videoId: info.id,
+        requestedLang: lang,
+      }
+    );
+
+    const audioPath = await extractAudioForWhisper(url, signal);
+    if (audioPath) {
+      const whisperTranscript = await transcribeWithWhisper(audioPath, lang);
+      if (whisperTranscript) {
+        logger.info("Successfully transcribed with Whisper fallback", {
+          videoId: info.id,
+          transcriptLength: whisperTranscript.length,
+        });
+        return whisperTranscript;
+      }
+    }
+  } else {
+    logger.warn("Whisper fallback unavailable - OPENAI_API_KEY not configured");
+  }
+
   // All attempts failed - provide detailed error message
   const availableLangs = [
     ...new Set([
@@ -457,11 +637,14 @@ async function getVideoTranscript(url, lang = "tr", signal) {
   ];
 
   const hasAnyCaptions = availableLangs.length > 0;
+  const whisperNote = openai
+    ? "Whisper STT fallback was attempted but failed."
+    : "Whisper STT fallback unavailable (OPENAI_API_KEY not configured).";
 
   let errorMessage;
   if (!hasAnyCaptions) {
     errorMessage =
-      `NO_CAPTIONS_AVAILABLE: This video has no captions or subtitles available. ` +
+      `NO_CAPTIONS_AVAILABLE: This video has no captions or subtitles available. ${whisperNote} ` +
       `Possible reasons: (1) The video creator has disabled auto-generated captions, ` +
       `(2) YouTube's speech recognition doesn't support the video's language well, ` +
       `(3) The audio quality is insufficient for auto-captioning, ` +
@@ -875,6 +1058,20 @@ app.get("/transcript", async (req, res) => {
               !line.includes("-->")
           )
           .map((line) => line.trim());
+      } else if (
+        typeof transcriptXml === "string" &&
+        transcriptXml.length > 0
+      ) {
+        // Plain text format (from Whisper or youtube-transcript-plus)
+        // Already clean text, just split into sentences for consistency
+        subtitleLines = transcriptXml
+          .split(/(?<=[.!?])\s+/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        logger.info("Processing plain text transcript", {
+          totalLength: transcriptXml.length,
+          sentences: subtitleLines.length,
+        });
       } else {
         throw new Error("Unsupported transcript format");
       }

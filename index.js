@@ -11,9 +11,9 @@ const requestIdMiddleware = require("./middleware/requestId");
 const { createClient } = require("@supabase/supabase-js");
 const logger = require("./utils/logger");
 const OpenAI = require("openai");
-const {
-  fetchTranscript: fetchYTTranscript,
-} = require("youtube-transcript-plus");
+
+// youtube-transcript-plus is an ESM module, will be dynamically imported when needed
+let fetchYTTranscript = null;
 
 const YTDlpWrap = require("yt-dlp-wrap").default;
 const { v4: uuidv4 } = require("uuid");
@@ -551,6 +551,12 @@ async function getVideoTranscript(url, lang = "tr", signal) {
       videoId: info.id,
       requestedLang: lang,
     });
+
+    // Dynamically import the ESM module if not already loaded
+    if (!fetchYTTranscript) {
+      const ytTranscriptModule = await import("youtube-transcript-plus");
+      fetchYTTranscript = ytTranscriptModule.fetchTranscript;
+    }
 
     const baseLang = lang.split("-")[0];
     const ytTranscript = await fetchYTTranscript(info.id, { lang: baseLang });

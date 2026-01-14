@@ -5,41 +5,63 @@ REST API to download YouTube videos as MP3/MP4 files and get video transcripts. 
 **New Authentication System**: This API now uses JWT authentication for enhanced security.
 
 ## Important Limitations
+
 - All processing results are temporary and immediately discarded after delivery
 - Files are streamed directly without server storage
 - Progress data is ephemeral and not persisted
 - Do not rely on long-term result availability
 
 ## API Base URL
+
 `https://p01--youtube-multi-api-private-srv--yfb9ttcdx8bx.code.run`
 
 ## Installation
+
 1. Clone the repository
 2. Install dependencies: `npm install`
 3. Generate RSA key pair for JWT authentication:
+
 ```bash
-node generateKeys.js
+npm run build
 ```
-4. Create `.env` file with your OpenRouter API key and JWT settings:
-``` 
-# Required for transcript processing:
-OPENROUTER_API_KEY=your_api_key_here  
+
+4. Create `.env` file with your API keys and settings:
+
+```
+# Required for transcript AI cleaning:
+OPENROUTER_API_KEY=your_api_key_here
+
+# Optional: OpenAI Whisper API for speech-to-text fallback
+# When YouTube captions are unavailable, Whisper will transcribe the audio
+# Get your API key from https://platform.openai.com/api-keys
+OPENAI_API_KEY=your_openai_key_here
 
 # JWT configuration:
 JWT_EXPIRES_IN=1h
 JWT_ALGORITHM=RS256
 ```
-4. Start the server: `npm start`
+
+> **Note:** The transcript endpoint uses a multi-fallback system:
+>
+> 1. YouTube auto-captions (primary)
+> 2. youtube-transcript-plus library
+> 3. yt-dlp auto-subs extraction
+> 4. OpenAI Whisper STT (requires `OPENAI_API_KEY`)
+
+5. Start the server: `npm start`
 
 ## Authentication
+
 All endpoints except `/ping`, `/test-token`, and `/auth/exchange-token` require authentication. The API supports two authentication methods:
 
 ### 1. JWT Authentication
+
 - **Getting a Test Token (Development Only):**  
   `GET /test-token`  
   Returns a JWT token for testing in development environment.
 
   **Response:**
+
   ```json
   {
     "token": "your_jwt_token_here"
@@ -51,17 +73,21 @@ All endpoints except `/ping`, `/test-token`, and `/auth/exchange-token` require 
   `Authorization: Bearer <your_token>`
 
 ### 2. RapidAPI Authentication
+
 - **Required Headers:**
+
   - `x-rapidapi-proxy-secret`: Your RapidAPI proxy secret
   - `x-rapidapi-user`: Your RapidAPI user identifier
 
 - **Note:** In development mode (`NODE_ENV=development`), RapidAPI authentication is automatically bypassed.
 
 ### Token Exchange Endpoint
+
 `POST /auth/exchange-token`  
 Exchange your Supabase access token for a custom JWT token (for Supabase users)
 
 **Request Body:**
+
 ```json
 {
   "supabaseAccessToken": "your_supabase_access_token"
@@ -69,6 +95,7 @@ Exchange your Supabase access token for a custom JWT token (for Supabase users)
 ```
 
 **Response:**
+
 ```json
 {
   "apiToken": "generated_jwt_token",
@@ -79,9 +106,11 @@ Exchange your Supabase access token for a custom JWT token (for Supabase users)
 ## API Endpoints
 
 ### GET /ping
+
 Health check endpoint (no authentication required)
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -91,15 +120,18 @@ Health check endpoint (no authentication required)
 ```
 
 ### GET /info
+
 Get video metadata
 
 **Query Parameters:**
+
 - `url` (required) - YouTube video URL
 - `type` (optional) - Type of information to return.
-    - `sum` (default): Returns a summary of the video information.
-    - `full`: Returns the complete video information object from yt-dlp.
+  - `sum` (default): Returns a summary of the video information.
+  - `full`: Returns the complete video information object from yt-dlp.
 
 **Response (type=sum):**
+
 ```json
 {
   "availability": null,
@@ -139,6 +171,7 @@ Get video metadata
 The response for `type=full` includes the complete JSON output from `yt-dlp`. This object can be quite large and its structure may vary. Refer to the `yt-dlp` documentation for details on the possible fields.
 
 **Example `curl` commands:**
+
 ```bash
 # Get summary video info (default)
 curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
@@ -150,12 +183,15 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 ```
 
 ### GET /mp3
+
 Download video as MP3 file with progress tracking
 
 **Query Parameters:**
+
 - `url` (required) - YouTube video URL
 
 **Response Headers:**
+
 - `X-Processing-Id`: ID for tracking progress and cancellation
 - `X-Video-Id`: YouTube video ID
 - `X-Video-Title`: Video title
@@ -169,12 +205,15 @@ This allows frontends to access the X-Processing-Id immediately for cancellation
 **Response:** MP3 file download
 
 ### GET /mp4
+
 Download video as MP4 file with progress tracking
 
 **Query Parameters:**
+
 - `url` (required) - YouTube video URL
 
 **Response Headers:**
+
 - `X-Processing-Id`: ID for tracking progress and cancellation
 - `X-Video-Id`: YouTube video ID
 - `X-Video-Title`: Video title
@@ -192,15 +231,18 @@ This allows frontends to access the X-Processing-Id immediately for cancellation
 The `/transcript`, `/mp3`, and `/mp4` endpoints use asynchronous processing to handle operations. Instead of waiting for completion, they return immediately with identifiers for tracking progress.
 
 ### GET /transcript
+
 Initiate transcript processing
 
 **Query Parameters:**
+
 - `url` (required) - YouTube video URL
 - `lang` (optional) - Language code (default: 'tr')
 - `skipAI` (optional) - Skip AI processing (default: false)
 - `useDeepSeek` (optional) - Use DeepSeek model (default: true)
 
 **Response (202 Accepted):**
+
 ```json
 {
   "processingId": "unique-job-id",
@@ -211,12 +253,15 @@ Initiate transcript processing
 ```
 
 ### GET /progress/:id
+
 Get processing status
 
 **Path Parameters:**
+
 - `id` (required) - Processing ID
 
 **Response:**
+
 ```json
 {
   "id": "unique-job-id",
@@ -230,12 +275,15 @@ Get processing status
 ```
 
 ### GET /result/:id
+
 Get processing result
 
 **Path Parameters:**
+
 - `id` (required) - Processing ID
 
 **Response (if completed):**
+
 ```json
 {
   "success": true,
@@ -253,6 +301,7 @@ Get processing result
 ```
 
 **Response (if not completed):**
+
 ```json
 {
   "message": "Processing not complete",
@@ -262,34 +311,38 @@ Get processing result
 ```
 
 ### POST /cancel/:id
+
 Cancel a processing job
 
 Cancel an in-progress MP3, MP4, or transcript processing job. This is useful for stopping long-running operations.
 
 **Path Parameters:**
+
 - `id` (required) - Processing ID obtained from the original request
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Process canceled successfully",
   "video_id": "YouTube video ID",
   "video_title": "Video title",
-  "queue_position": "Was #3 in queue"  // Only present if job was queued
+  "queue_position": "Was #3 in queue" // Only present if job was queued
 }
 ```
 
 **Error Responses:**
+
 - 400: Process cannot be canceled or is already complete
 - 404: Processing ID not found
 
 **Example:**
+
 ```bash
 # Cancel a processing job
 curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   "http://localhost:3500/cancel/your_processing_id_here"
 ```
-
 
 ## Example Usage
 
@@ -327,9 +380,11 @@ curl "http://localhost:3500/result/$processing_id"
 ```
 
 ## Legal
+
 - [Terms of Use](TERMS.md) - Important usage guidelines and restrictions
 
 ## Dependencies
+
 - express
 - cors
 - yt-dlp-wrap

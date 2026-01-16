@@ -160,6 +160,159 @@ fs.mkdir(tempDir, { recursive: true }).catch((err) =>
   logger.error("Failed to create temp directory", { error: err.message })
 );
 
+// =============================================================================
+// TEMP FILE CLEANUP UTILITIES
+// =============================================================================
+
+/**
+ * Clean all files in the temp directory
+ * @param {string} reason - Reason for cleanup (for logging)
+ * @returns {Promise<number>} - Number of files deleted
+ */
+async function cleanupTempDirectory(reason = "manual") {
+  try {
+    const files = await fs.readdir(tempDir);
+    if (files.length === 0) {
+      logger.info(`🧹 Temp cleanup (${reason}): No files to clean`);
+      return 0;
+    }
+
+    let deletedCount = 0;
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          await fs.unlink(path.join(tempDir, file));
+          deletedCount++;
+        } catch (err) {
+          // File might be in use or already deleted
+          logger.warn(`🧹 Could not delete temp file: ${file}`, {
+            error: err.message,
+          });
+        }
+      })
+    );
+
+    logger.info(
+      `🧹 Temp cleanup (${reason}): Deleted ${deletedCount}/${files.length} files`
+    );
+    return deletedCount;
+  } catch (err) {
+    logger.error(`🧹 Temp cleanup (${reason}) failed`, { error: err.message });
+    return 0;
+  }
+}
+
+/**
+ * Clean temp files older than specified age
+ * @param {number} maxAgeMs - Maximum age in milliseconds
+ * @returns {Promise<number>} - Number of files deleted
+ */
+async function cleanupStaleTempFiles(maxAgeMs = 30 * 60 * 1000) {
+  try {
+    const files = await fs.readdir(tempDir);
+    const now = Date.now();
+    let deletedCount = 0;
+
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          const filePath = path.join(tempDir, file);
+          const stats = await fs.stat(filePath);
+          const fileAge = now - stats.mtimeMs;
+
+          if (fileAge > maxAgeMs) {
+            await fs.unlink(filePath);
+            deletedCount++;
+            logger.debug(`🧹 Deleted stale temp file: ${file}`, {
+              ageMinutes: Math.round(fileAge / 60000),
+            });
+          }
+        } catch (err) {
+          // File might be in use or already deleted
+        }
+      })
+    );
+
+    if (deletedCount > 0) {
+      logger.info(
+        `🧹 Periodic cleanup: Deleted ${deletedCount} stale files (older than ${Math.round(
+          maxAgeMs / 60000
+        )} min)`
+      );
+    }
+    return deletedCount;
+  } catch (err) {
+    logger.error("🧹 Periodic cleanup failed", { error: err.message });
+    return 0;
+  }
+}
+
+// Startup cleanup - clear any leftover temp files from previous runs
+cleanupTempDirectory("startup").catch(() => {});
+
+// Periodic cleanup - runs every 15 minutes to clean files older than 30 minutes
+const CLEANUP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_TEMP_FILE_AGE_MS = 30 * 60 * 1000; // 30 minutes
+const cleanupInterval = setInterval(() => {
+  cleanupStaleTempFiles(MAX_TEMP_FILE_AGE_MS).catch(() => {});
+}, CLEANUP_INTERVAL_MS);
+
+// Graceful shutdown handler
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info(`⚠️ Received ${signal}, starting graceful shutdown...`);
+
+  // Stop accepting new jobs
+  clearInterval(cleanupInterval);
+
+  // Kill any in-flight child processes
+  let killedProcesses = 0;
+  for (const [id, job] of processingCache.entries()) {
+    if (job.child && !job.child.killed) {
+      job.child.kill("SIGKILL");
+      killedProcesses++;
+      logger.info(`⚠️ Killed in-flight process for job ${id}`);
+    }
+    if (job.abortController) {
+      job.abortController.abort();
+    }
+  }
+
+  // Clean up temp files
+  await cleanupTempDirectory("shutdown");
+
+  logger.info(`✅ Graceful shutdown complete`, {
+    killedProcesses,
+    signal,
+  });
+
+  process.exit(0);
+}
+
+// Register shutdown handlers
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// Handle uncaught exceptions - attempt cleanup before crash
+process.on("uncaughtException", async (err) => {
+  logger.error("💥 Uncaught Exception", {
+    error: err.message,
+    stack: err.stack,
+  });
+  await cleanupTempDirectory("uncaughtException").catch(() => {});
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("💥 Unhandled Rejection", { reason: String(reason) });
+});
+
+// =============================================================================
+
 // Initialize processing queue and cache (will be initialized in initializeServer)
 let processingQueue;
 const processingCache = new Map();

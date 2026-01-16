@@ -650,6 +650,11 @@ curl --request GET \
 - **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction
 - **Whisper STT Fallback**: When YouTube captions are unavailable and `OPENAI_API_KEY` is configured, the API uses OpenAI Whisper for speech-to-text transcription (~$0.006/min). Long videos are automatically chunked into 10-minute segments.
 - **Language Fallback**: The API automatically tries language variants (e.g., `en` → `en-US` → `en-GB`) when the exact requested language isn't available
+- **Temp File Cleanup**: The server implements multiple safeguards to ensure temporary files are cleaned up:
+  1. **Startup Cleanup**: Clears any leftover temp files from previous runs when the server starts
+  2. **Graceful Shutdown**: Handles SIGTERM/SIGINT signals to clean up in-flight jobs and temp files
+  3. **Periodic Cleanup**: A cron job runs every 15 minutes to delete temp files older than 30 minutes
+  4. **Exception Handling**: Attempts to clean up temp files even on uncaught exceptions
 
 ---
 

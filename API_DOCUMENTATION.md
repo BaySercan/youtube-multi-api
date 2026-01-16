@@ -439,12 +439,20 @@ This error indicates that the video has **absolutely no captions or subtitles** 
 5. **Private/unlisted restrictions**: Some video settings may prevent caption extraction
 
 > 💡 **Whisper STT Fallback**: When YouTube captions are unavailable, the API automatically attempts to transcribe the video using OpenAI's Whisper speech-to-text model (if `OPENAI_API_KEY` is configured). This incurs a cost of approximately **$0.006 per minute** of audio.
+>
+> **Whisper Features:**
+>
+> - Automatically splits long videos (>25MB audio) into 10-minute chunks
+> - Processes chunks sequentially and combines transcriptions
+> - Handles partial failures (if some chunks fail, successful ones are still combined)
+> - Requires `ffmpeg` and `ffprobe` for audio processing
 
 **What to try:**
 
 - Wait and retry later if the video was recently uploaded
 - Check if the video has captions when viewing directly on YouTube
 - Ensure `OPENAI_API_KEY` is configured for Whisper fallback
+- For long videos without captions, expect longer processing times due to chunked transcription
 
 #### `LANGUAGE_NOT_AVAILABLE`
 
@@ -640,7 +648,7 @@ curl --request GET \
 - **Ephemeral Progress**: Progress data is not persisted - poll promptly for results
 - **Video Availability**: Some videos may be region-locked or unavailable for download
 - **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction
-- **Whisper STT Fallback**: When YouTube captions are unavailable and `OPENAI_API_KEY` is configured, the API uses OpenAI Whisper for speech-to-text transcription (~$0.006/min)
+- **Whisper STT Fallback**: When YouTube captions are unavailable and `OPENAI_API_KEY` is configured, the API uses OpenAI Whisper for speech-to-text transcription (~$0.006/min). Long videos are automatically chunked into 10-minute segments.
 - **Language Fallback**: The API automatically tries language variants (e.g., `en` → `en-US` → `en-GB`) when the exact requested language isn't available
 
 ---

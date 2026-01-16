@@ -47,6 +47,13 @@ JWT_ALGORITHM=RS256
 > 2. youtube-transcript-plus library
 > 3. yt-dlp auto-subs extraction
 > 4. OpenAI Whisper STT (requires `OPENAI_API_KEY`)
+>
+> **Whisper STT Features:**
+>
+> - Automatically transcribes videos without captions
+> - Handles long videos by splitting audio into 10-minute chunks
+> - Cost: ~$0.006 per minute of audio
+> - Requires `ffmpeg` and `ffprobe` for audio processing
 
 5. Start the server: `npm start`
 

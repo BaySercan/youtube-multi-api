@@ -147,7 +147,7 @@ app.use((req, res, next) => {
 // Initialize Supabase client
 const supabaseAdmin = createClient(
   process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY,
 );
 
 // Apply authentication router to all routes
@@ -157,7 +157,7 @@ app.use(authRouter);
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, "temp");
 fs.mkdir(tempDir, { recursive: true }).catch((err) =>
-  logger.error("Failed to create temp directory", { error: err.message })
+  logger.error("Failed to create temp directory", { error: err.message }),
 );
 
 // =============================================================================
@@ -189,11 +189,11 @@ async function cleanupTempDirectory(reason = "manual") {
             error: err.message,
           });
         }
-      })
+      }),
     );
 
     logger.info(
-      `🧹 Temp cleanup (${reason}): Deleted ${deletedCount}/${files.length} files`
+      `🧹 Temp cleanup (${reason}): Deleted ${deletedCount}/${files.length} files`,
     );
     return deletedCount;
   } catch (err) {
@@ -230,14 +230,14 @@ async function cleanupStaleTempFiles(maxAgeMs = 30 * 60 * 1000) {
         } catch (err) {
           // File might be in use or already deleted
         }
-      })
+      }),
     );
 
     if (deletedCount > 0) {
       logger.info(
         `🧹 Periodic cleanup: Deleted ${deletedCount} stale files (older than ${Math.round(
-          maxAgeMs / 60000
-        )} min)`
+          maxAgeMs / 60000,
+        )} min)`,
       );
     }
     return deletedCount;
@@ -346,7 +346,7 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey || apiKey.trim() === "") {
     throw new Error(
-      "OPENROUTER_API_KEY environment variable is not set or empty"
+      "OPENROUTER_API_KEY environment variable is not set or empty",
     );
   }
   const model = useDeepSeek ? process.env.AI_MODEL_1 : process.env.AI_MODEL_2;
@@ -373,7 +373,7 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
             "Content-Type": "application/json",
           },
           signal,
-        }
+        },
       );
       if (response.data && response.data.choices && response.data.choices[0]) {
         const choice = response.data.choices[0];
@@ -498,7 +498,7 @@ function findLanguageTracks(info, lang) {
     ...new Set([...Object.keys(captions), ...Object.keys(subtitles)]),
   ];
   const variants = availableLangs.filter(
-    (l) => l.startsWith(baseLang + "-") || l === baseLang + "-orig"
+    (l) => l.startsWith(baseLang + "-") || l === baseLang + "-orig",
   );
 
   for (const variant of variants) {
@@ -552,13 +552,13 @@ async function fetchAutoSubsWithYtDlp(url, lang, signal) {
         (f.endsWith(".vtt") ||
           f.endsWith(".ttml") ||
           f.endsWith(".srv1") ||
-          f.endsWith(".srt"))
+          f.endsWith(".srt")),
     );
 
     if (subtitleFile) {
       const subtitleContent = await fs.readFile(
         path.join(tempDir, subtitleFile),
-        "utf8"
+        "utf8",
       );
       // Clean up the temp file
       await fs.unlink(path.join(tempDir, subtitleFile)).catch(() => {});
@@ -619,7 +619,7 @@ async function getAudioDuration(audioPath) {
 // Helper function to split audio file into chunks
 async function splitAudioIntoChunks(
   audioPath,
-  chunkDuration = WHISPER_CHUNK_DURATION_SECONDS
+  chunkDuration = WHISPER_CHUNK_DURATION_SECONDS,
 ) {
   const duration = await getAudioDuration(audioPath);
   const numChunks = Math.ceil(duration / chunkDuration);
@@ -737,14 +737,14 @@ async function extractAudioForWhisper(url, signal) {
         {
           sizeMB: fileSizeMB,
           limit: "25MB",
-        }
+        },
       );
 
       try {
         // Get audio duration to estimate chunks needed
         const duration = await getAudioDuration(audioPath);
         const estimatedChunks = Math.ceil(
-          duration / WHISPER_CHUNK_DURATION_SECONDS
+          duration / WHISPER_CHUNK_DURATION_SECONDS,
         );
 
         logger.info("🎤 Whisper: Preparing chunked transcription", {
@@ -756,7 +756,7 @@ async function extractAudioForWhisper(url, signal) {
         // Split into chunks
         const chunkPaths = await splitAudioIntoChunks(
           audioPath,
-          WHISPER_CHUNK_DURATION_SECONDS
+          WHISPER_CHUNK_DURATION_SECONDS,
         );
 
         // Return object with chunked data
@@ -802,7 +802,7 @@ async function transcribeSingleFile(audioPath, lang = "tr") {
   });
 
   const transcriptionTime = ((Date.now() - transcriptionStart) / 1000).toFixed(
-    1
+    1,
   );
 
   return { transcription, transcriptionTime };
@@ -812,7 +812,7 @@ async function transcribeSingleFile(audioPath, lang = "tr") {
 async function transcribeWithWhisper(audioData, lang = "tr") {
   if (!openai) {
     logger.warn(
-      "🎤 Whisper: OpenAI client not initialized - OPENAI_API_KEY not set"
+      "🎤 Whisper: OpenAI client not initialized - OPENAI_API_KEY not set",
     );
     return null;
   }
@@ -829,7 +829,7 @@ async function transcribeWithWhisper(audioData, lang = "tr") {
 
       const { transcription, transcriptionTime } = await transcribeSingleFile(
         audioData.path,
-        lang
+        lang,
       );
 
       // Clean up audio file after transcription
@@ -866,7 +866,7 @@ async function transcribeWithWhisper(audioData, lang = "tr") {
             `🎤 Whisper: Processing chunk ${chunkNumber}/${chunks.length}`,
             {
               chunkPath,
-            }
+            },
           );
 
           const { transcription, transcriptionTime } =
@@ -880,7 +880,7 @@ async function transcribeWithWhisper(audioData, lang = "tr") {
             {
               chunkTranscriptLength: transcription.length,
               transcriptionTime: `${transcriptionTime}s`,
-            }
+            },
           );
 
           // Clean up chunk file after successful transcription
@@ -892,7 +892,7 @@ async function transcribeWithWhisper(audioData, lang = "tr") {
             {
               error: chunkError.message,
               chunkPath,
-            }
+            },
           );
 
           // Clean up failed chunk file
@@ -966,10 +966,20 @@ async function getVideoTranscript(url, lang = "tr", signal) {
 
     const track =
       tracks.find(
-        (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1"
+        (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1",
       ) || tracks[0];
-    const transcriptResponse = await axios.get(track.url, { signal });
-    return transcriptResponse.data;
+
+    try {
+      const transcriptResponse = await axios.get(track.url, { signal });
+      return transcriptResponse.data;
+    } catch (trackError) {
+      logger.warn("Failed to fetch track URL, trying fallbacks", {
+        videoId: info.id,
+        trackUrl: track.url?.substring(0, 100) + "...",
+        error: trackError.message,
+      });
+      // Continue to fallbacks below
+    }
   }
 
   // No tracks found in video info, try youtube-transcript-plus (fast, uses YouTube's internal API)
@@ -998,7 +1008,7 @@ async function getVideoTranscript(url, lang = "tr", signal) {
         {
           videoId: info.id,
           segments: ytTranscript.length,
-        }
+        },
       );
       return transcriptText;
     }
@@ -1029,7 +1039,7 @@ async function getVideoTranscript(url, lang = "tr", signal) {
     const baseAutoSubsContent = await fetchAutoSubsWithYtDlp(
       url,
       baseLang,
-      signal
+      signal,
     );
     if (baseAutoSubsContent) {
       return baseAutoSubsContent;
@@ -1047,7 +1057,7 @@ async function getVideoTranscript(url, lang = "tr", signal) {
           ? `${(info.duration / 60).toFixed(1)} minutes`
           : "unknown",
         requestedLang: lang,
-      }
+      },
     );
 
     const audioData = await extractAudioForWhisper(url, signal);
@@ -1058,7 +1068,7 @@ async function getVideoTranscript(url, lang = "tr", signal) {
           videoId: info.id,
           audioType: audioData.type,
           chunks: audioData.type === "chunked" ? audioData.chunks.length : 1,
-        }
+        },
       );
 
       const whisperTranscript = await transcribeWithWhisper(audioData, lang);
@@ -1080,12 +1090,12 @@ async function getVideoTranscript(url, lang = "tr", signal) {
         "🎤 Whisper: Audio extraction failed, cannot proceed with transcription",
         {
           videoId: info.id,
-        }
+        },
       );
     }
   } else {
     logger.warn(
-      "🎤 Whisper: Fallback unavailable - OPENAI_API_KEY not configured"
+      "🎤 Whisper: Fallback unavailable - OPENAI_API_KEY not configured",
     );
   }
 
@@ -1133,7 +1143,7 @@ app.get("/test-token", (req, res) => {
     return res
       .status(404)
       .send(
-        `Test token endpoint only available in development mode. Current NODE_ENV: ${nodeEnv}`
+        `Test token endpoint only available in development mode. Current NODE_ENV: ${nodeEnv}`,
       );
   }
 
@@ -1143,7 +1153,7 @@ app.get("/test-token", (req, res) => {
     const path = require("path");
     const privateKey = fs.readFileSync(
       path.join(__dirname, "keys/private.key"),
-      "utf8"
+      "utf8",
     );
 
     const token = jwt.sign({ userId: "test-user" }, privateKey, {
@@ -1238,8 +1248,8 @@ app.get("/info", async (req, res) => {
         post_date: new Date(
           `${info.upload_date.substring(0, 4)}-${info.upload_date.substring(
             4,
-            6
-          )}-${info.upload_date.substring(6, 8)}`
+            6,
+          )}-${info.upload_date.substring(6, 8)}`,
         ).toISOString(), // Kept original post_date format
         upload_date_raw: info.upload_date, // Raw upload_date
         uploader: info.uploader,
@@ -1287,7 +1297,7 @@ app.get("/mp3", async (req, res) => {
     const fileName = `${info.title.replace(/[^\w\s.-]/gi, "")}.mp3`;
     res.setHeader(
       "Access-Control-Expose-Headers",
-      "X-Processing-Id, X-Video-Id, X-Video-Title, Content-Disposition, Content-Type"
+      "X-Processing-Id, X-Video-Id, X-Video-Title, Content-Disposition, Content-Type",
     );
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     res.setHeader("Content-Type", "audio/mpeg");
@@ -1330,7 +1340,7 @@ app.get("/mp3", async (req, res) => {
 
     child.stdout.pipe(res);
     child.stderr.on("data", (data) =>
-      logger.ytdlp("stderr output", { data: data.toString() })
+      logger.ytdlp("stderr output", { data: data.toString() }),
     );
 
     child.on("error", (err) => {
@@ -1383,7 +1393,7 @@ app.get("/mp4", async (req, res) => {
     const fileName = `${info.title.replace(/[^\w\s.-]/gi, "")}.mp4`;
     res.setHeader(
       "Access-Control-Expose-Headers",
-      "X-Processing-Id, X-Video-Id, X-Video-Title, Content-Disposition, Content-Type"
+      "X-Processing-Id, X-Video-Id, X-Video-Title, Content-Disposition, Content-Type",
     );
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     res.setHeader("Content-Type", "video/mp4");
@@ -1425,7 +1435,7 @@ app.get("/mp4", async (req, res) => {
 
     child.stdout.pipe(res);
     child.stderr.on("data", (data) =>
-      logger.ytdlp("stderr output", { data: data.toString() })
+      logger.ytdlp("stderr output", { data: data.toString() }),
     );
 
     child.on("error", (err) => {
@@ -1494,7 +1504,7 @@ app.get("/transcript", async (req, res) => {
       const transcriptXml = await getVideoTranscript(
         videoUrl,
         lang,
-        abortController.signal
+        abortController.signal,
       );
 
       updateProgress(processingId, 30, "Fetching raw transcript is complete");
@@ -1516,7 +1526,7 @@ app.get("/transcript", async (req, res) => {
               line.trim() &&
               !line.startsWith("WEBVTT") &&
               !line.startsWith("NOTE") &&
-              !line.includes("-->")
+              !line.includes("-->"),
           )
           .map((line) => line.trim());
       } else if (
@@ -1545,7 +1555,7 @@ app.get("/transcript", async (req, res) => {
             .replace(/<[^>]+>/g, "") // Remove HTML-like tags
             .replace(/\{[^\}]+\}/g, "") // Remove curly brace annotations
             .replace(/^\s*-\s*/gm, "") // Remove leading dashes
-            .trim()
+            .trim(),
         )
         .filter((line) => line); // Remove empty lines
 
@@ -1583,12 +1593,12 @@ app.get("/transcript", async (req, res) => {
           const firstResponse = await callAIModel(
             messages,
             useDeepSeek,
-            abortController.signal
+            abortController.signal,
           );
           updateProgress(
             processingId,
             75,
-            "Cleaning up transcript with AI ..."
+            "Cleaning up transcript with AI ...",
           );
 
           // Update processor if we switched to backup model
@@ -1618,12 +1628,12 @@ app.get("/transcript", async (req, res) => {
           const finalResponse = await callAIModel(
             cleanupMessages,
             useDeepSeek,
-            abortController.signal
+            abortController.signal,
           );
           updateProgress(
             processingId,
             80,
-            "Finalizing transcript with AI model..."
+            "Finalizing transcript with AI model...",
           );
 
           // After getting finalResponse, split transcript and notes if needed
@@ -1675,8 +1685,8 @@ app.get("/transcript", async (req, res) => {
         post_date: new Date(
           `${info.upload_date.substring(0, 4)}-${info.upload_date.substring(
             4,
-            6
-          )}-${info.upload_date.substring(6, 8)}`
+            6,
+          )}-${info.upload_date.substring(6, 8)}`,
         ).toISOString(),
         last_requested: lastRequested,
       };
@@ -1736,7 +1746,11 @@ app.get("/result/:id", (req, res) => {
   if (!job) {
     return res.status(404).json({ error: "Processing ID not found" });
   }
-  if (job.progress !== 100 || job.status.toLowerCase() !== "completed") {
+  const terminalStatuses = ["completed", "failed", "canceled"];
+  if (
+    job.progress !== 100 ||
+    !terminalStatuses.includes(job.status.toLowerCase())
+  ) {
     return res.status(202).json({
       message: "Processing not complete",
       status: job.status,
@@ -1833,7 +1847,7 @@ app.post("/auth/exchange-token", express.json(), async (req, res) => {
           iat: Math.floor(Date.now() / 1000),
         },
         privateKey,
-        { algorithm: "RS256", expiresIn: "1h" }
+        { algorithm: "RS256", expiresIn: "1h" },
       );
 
       res.json({

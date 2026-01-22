@@ -94,6 +94,13 @@ const USER_AGENT =
 
 // Helper function to validate cookies file
 async function validateCookiesFile() {
+  // Check USE_COOKIES environment variable (default: true)
+  const useCookies = process.env.USE_COOKIES !== "false";
+  if (!useCookies) {
+    logger.debug("Cookies disabled via USE_COOKIES=false");
+    return false;
+  }
+
   try {
     await fs.access("cookies.txt");
     const stats = await fs.stat("cookies.txt");

@@ -27,6 +27,17 @@ const openai = process.env.OPENAI_API_KEY
 function sanitizeHeaderValue(value) {
   return value.replace(/[^\x20-\x7E]/g, "");
 }
+
+// Validate URL format
+function isValidUrl(string) {
+  try {
+    const url = new URL(string);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch (_) {
+    return false;
+  }
+}
+
 // Initialize yt-dlp-wrap
 let ytDlpWrap;
 
@@ -435,6 +446,10 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
 
 // Helper function to get video info using yt-dlp-wrap
 async function getVideoInfo(url, options = {}, retries = 3) {
+  if (!isValidUrl(url)) {
+    throw new Error("Invalid URL provided");
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
       if (options.signal && options.signal.aborted) {
@@ -447,6 +462,7 @@ async function getVideoInfo(url, options = {}, retries = 3) {
         "--no-check-certificates",
         "--user-agent",
         USER_AGENT,
+        "--",
         url,
       ];
 
@@ -538,6 +554,7 @@ async function fetchAutoSubsWithYtDlp(url, lang, signal) {
     USER_AGENT,
     "-o",
     subtitlePath,
+    "--",
     url,
   ];
 
@@ -708,6 +725,7 @@ async function extractAudioForWhisper(url, signal) {
     USER_AGENT,
     "-o",
     audioPath,
+    "--",
     url,
   ];
 
@@ -1214,8 +1232,11 @@ app.get("/info", async (req, res) => {
   const { url, type = "sum" } = req.query; // Default type to "sum"
   if (!url) return res.status(400).send("Missing url parameter");
 
+  const videoUrl = Array.isArray(url) ? url[0] : url;
+  if (!isValidUrl(videoUrl)) return res.status(400).send("Invalid URL");
+
   try {
-    const info = await getVideoInfo(Array.isArray(url) ? url[0] : url);
+    const info = await getVideoInfo(videoUrl);
     const lastRequested = new Date().toISOString();
 
     if (type === "full") {
@@ -1281,6 +1302,8 @@ app.get("/mp3", async (req, res) => {
   if (!url) return res.status(400).send("Missing url parameter");
   const videoUrl = Array.isArray(url) ? url[0] : url;
 
+  if (!isValidUrl(videoUrl)) return res.status(400).send("Invalid URL");
+
   // Create processing job immediately
   const processingId = uuidv4();
   const job = {
@@ -1328,6 +1351,7 @@ app.get("/mp3", async (req, res) => {
       USER_AGENT,
       "-o",
       "-", // Output to stdout
+      "--",
       videoUrl,
     ];
 
@@ -1377,6 +1401,8 @@ app.get("/mp4", async (req, res) => {
   if (!url) return res.status(400).send("Missing url parameter");
   const videoUrl = Array.isArray(url) ? url[0] : url;
 
+  if (!isValidUrl(videoUrl)) return res.status(400).send("Invalid URL");
+
   // Create processing job immediately
   const processingId = uuidv4();
   const job = {
@@ -1424,6 +1450,7 @@ app.get("/mp4", async (req, res) => {
       USER_AGENT,
       "-o",
       "-", // Output to stdout
+      "--",
       videoUrl,
     ];
 
@@ -1483,6 +1510,8 @@ app.get("/transcript", async (req, res) => {
   if (typeof videoUrl !== "string") {
     return res.status(400).send("url parameter must be a string");
   }
+
+  if (!isValidUrl(videoUrl)) return res.status(400).send("Invalid URL");
 
   // Create processing job
   const processingId = uuidv4();

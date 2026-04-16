@@ -3,9 +3,25 @@ const fs = require("fs");
 const path = require("path");
 const logger = require("../utils/logger");
 
+// Read public key once at startup instead of on every request
+let publicKey;
+try {
+  publicKey = fs.readFileSync(
+    path.join(__dirname, "../keys/public.key"),
+    "utf8"
+  );
+} catch (err) {
+  logger.error("Failed to load JWT public key at startup", { error: err.message });
+}
+
 module.exports = (req, res, next) => {
   // Skip authentication for /ping and /test-token endpoints
   if (req.path === "/ping" || req.path === "/test-token") return next();
+
+  if (!publicKey) {
+    logger.error("JWT public key not available");
+    return res.status(500).json({ error: "Authentication system unavailable" });
+  }
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -21,13 +37,7 @@ module.exports = (req, res, next) => {
   const token = authHeader.split(" ")[1];
 
   try {
-    // Read public key
-    const publicKey = fs.readFileSync(
-      path.join(__dirname, "../keys/public.key"),
-      "utf8"
-    );
-
-    // Verify token
+    // Verify token with cached public key
     const decoded = jwt.verify(token, publicKey);
     req.user = decoded;
     logger.auth("JWT authenticated", {

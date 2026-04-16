@@ -114,21 +114,32 @@ Exchange your Supabase access token for a custom JWT token (for Supabase users)
 
 ### GET /ping
 
-Health check endpoint (no authentication required)
+Health check endpoint (no authentication required). Now includes memory usage and queue statistics.
 
 **Response:**
 
 ```json
 {
   "status": "ok",
-  "timestamp": "current ISO timestamp",
-  "version": "2.1.0"
+  "version": "2.2.0",
+  "uptime": "2h 15m 30s",
+  "memory": {
+    "rss": "55.20 MB",
+    "heapTotal": "38.50 MB",
+    "heapUsed": "28.10 MB"
+  },
+  "queues": {
+    "mp3": { "size": 0, "pending": 0 },
+    "mp4": { "size": 0, "pending": 0 },
+    "transcript": { "size": 0, "pending": 0 }
+  },
+  "timestamp": "current ISO timestamp"
 }
 ```
 
 ### GET /info
 
-Get video metadata
+Get video metadata (cached for 10 minutes)
 
 **Query Parameters:**
 
@@ -191,7 +202,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 
 ### GET /mp3
 
-Download video as MP3 file with progress tracking
+Download video as MP3 file with progress tracking. Downloads are queued to prevent server resource exhaustion.
 
 **Query Parameters:**
 
@@ -213,7 +224,7 @@ This allows frontends to access the X-Processing-Id immediately for cancellation
 
 ### GET /mp4
 
-Download video as MP4 file with progress tracking
+Download video as MP4 file with progress tracking. Downloads are queued.
 
 **Query Parameters:**
 
@@ -235,7 +246,7 @@ This allows frontends to access the X-Processing-Id immediately for cancellation
 
 ## Asynchronous Processing System
 
-The `/transcript`, `/mp3`, and `/mp4` endpoints use asynchronous processing to handle operations. Instead of waiting for completion, they return immediately with identifiers for tracking progress.
+The `/transcript`, `/mp3`, and `/mp4` endpoints use asynchronous processing to handle operations. The API integrates **Supabase** for persistent job storage, allowing background tasks to recover state across server restarts.
 
 ### GET /transcript
 
@@ -245,7 +256,8 @@ Initiate transcript processing
 
 - `url` (required) - YouTube video URL
 - `lang` (optional) - Language code (default: 'tr')
-- `skipAI` (optional) - Skip AI processing (default: false)
+- `quality` (optional) - AI cleaning level: `fast` (no AI, instant), `standard` (default, single AI pass), `thorough` (two AI passes).
+- `skipAI` (deprecated) - Maps to `quality=fast`
 - `useDeepSeek` (optional) - Use DeepSeek model (default: true)
 
 **Response (202 Accepted):**
@@ -296,8 +308,8 @@ Get processing result
   "success": true,
   "title": "Video title",
   "language": "tr",
+  "quality": "standard",
   "transcript": "Cleaned transcript text",
-  "ai_notes": "Optional AI processing notes",
   "isProcessed": true,
   "processor": "deepseek | qwen",
   "video_id": "YouTube video ID",
@@ -319,7 +331,7 @@ Get processing result
 
 ### POST /cancel/:id
 
-Cancel a processing job
+Cancel a processing job. Backed by job removal from Supabase.
 
 Cancel an in-progress MP3, MP4, or transcript processing job. This is useful for stopping long-running operations.
 
@@ -374,7 +386,7 @@ curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 
 # Initiate transcript processing (with JWT)
 response=$(curl -s -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+  "http://localhost:3500/transcript?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&quality=standard")
 processing_id=$(echo $response | jq -r '.processingId')
 curl "http://localhost:3500/progress/$processing_id"
 
@@ -392,11 +404,11 @@ curl "http://localhost:3500/result/$processing_id"
 
 ## Dependencies
 
-- express
-- cors
-- yt-dlp-wrap
-- dotenv
-- axios
-- p-queue
-- uuid
-- child_process
+Core technologies used:
+- `express` (Routing)
+- `helmet` (Security Headers)
+- `yt-dlp-wrap` (Downloads)
+- `@supabase/supabase-js` (Job Persistence)
+- `p-queue` (Concurrency Limits)
+- `openai` / `axios` (AI Processing)
+- `jsonwebtoken` (Auth)

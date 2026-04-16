@@ -133,6 +133,20 @@ async function validateCookiesFile() {
   }
 }
 
+// Cached cookies validation to avoid repeated disk I/O
+let cachedCookiesValid = null;
+let cookiesLastChecked = 0;
+const COOKIES_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function areCookiesValid() {
+  if (cachedCookiesValid !== null && Date.now() - cookiesLastChecked < COOKIES_CACHE_TTL) {
+    return cachedCookiesValid;
+  }
+  cachedCookiesValid = await validateCookiesFile();
+  cookiesLastChecked = Date.now();
+  return cachedCookiesValid;
+}
+
 const app = express();
 app.use(cors());
 
@@ -450,7 +464,7 @@ async function getVideoInfo(url, options = {}, retries = 3) {
         url,
       ];
 
-      const hasValidCookies = await validateCookiesFile();
+      const hasValidCookies = await areCookiesValid();
       if (hasValidCookies) {
         args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
         logger.ytdlp("Using cookies for authentication");
@@ -541,7 +555,7 @@ async function fetchAutoSubsWithYtDlp(url, lang, signal) {
     url,
   ];
 
-  const hasValidCookies = await validateCookiesFile();
+  const hasValidCookies = await areCookiesValid();
   if (hasValidCookies) {
     args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
   }
@@ -711,7 +725,7 @@ async function extractAudioForWhisper(url, signal) {
     url,
   ];
 
-  const hasValidCookies = await validateCookiesFile();
+  const hasValidCookies = await areCookiesValid();
   if (hasValidCookies) {
     args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
   }
@@ -1331,7 +1345,7 @@ app.get("/mp3", async (req, res) => {
       videoUrl,
     ];
 
-    const hasValidCookies = await validateCookiesFile();
+    const hasValidCookies = await areCookiesValid();
     if (hasValidCookies) {
       args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
     }
@@ -1427,7 +1441,7 @@ app.get("/mp4", async (req, res) => {
       videoUrl,
     ];
 
-    const hasValidCookies = await validateCookiesFile();
+    const hasValidCookies = await areCookiesValid();
     if (hasValidCookies) {
       args.push("--cookies", path.resolve(__dirname, "cookies.txt"));
     }

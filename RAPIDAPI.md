@@ -14,19 +14,23 @@ Unlock YouTube content with our comprehensive API solution:
 - **📹 MP4 Downloads**  
   Get videos in standard MP4 format
 - **📝 AI-Powered Transcripts**  
-  Enhanced with grammar correction and duplicate removal
-- **🌐 Multi-language Support**  
-  Transcripts available in multiple languages
+  Enhanced with grammar correction and duplicate removal via cutting-edge LLMs (Qwen/DeepSeek)
+- **🎙️ Whisper STT Engine Fallback**  
+  Automatically transcribes videos that don't have natural captions
+- **🌐 AI Contextual Translation**  
+  If the requested language isn't available, our AI translates the transcript while preserving perfect context and formatting
 
 ### ⚙️ Technical Capabilities
 - **⏱️ Real-time Progress Tracking**  
   Monitor operations with progress endpoints
+- **🌩️ Persistent Job Storage**  
+  Cloud-backed asynchronous job handling handles server restarts without losing progress
+- **🏭 Smart Queuing System**  
+  Ensures high scale API calls complete without system timeouts
 - **❌ Cancellation Support**  
   Stop ongoing processes anytime
-- **🔒 Dual Authentication**  
+- **🔒 Secure Authentication**  
   JWT tokens or RapidAPI headers
-- **⚡ Efficient Processing**  
-  Built for high-concurrency workloads
 
 ### 💡 Ideal For
 - Media conversion tools
@@ -56,7 +60,7 @@ By using this API, you agree to:
    Credit "YouTube Multi API" in public projects
 
 6. **🧹 Ephemeral Processing**  
-   No content storage after delivery
+   Downloaded files are streamed and never permanently stored
 
 7. **🛡️ Content Restrictions**  
    Do not process:

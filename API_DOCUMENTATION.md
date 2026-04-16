@@ -1,6 +1,6 @@
 # YouTube Multi API Documentation
 
-> **Version:** 2.1.0  
+> **Version:** 2.2.0  
 > **Base URL:** `https://youtube-multi-api.p.rapidapi.com`
 
 A powerful REST API for downloading YouTube videos as MP3/MP4 files and extracting AI-cleaned video transcripts.
@@ -85,8 +85,19 @@ Health check endpoint. **No authentication required.**
 ```json
 {
   "status": "OK",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "version": "2.1.0"
+  "version": "2.2.0",
+  "uptime": "5h 12m 30s",
+  "memory": {
+    "rss": "55.20 MB",
+    "heapTotal": "38.50 MB",
+    "heapUsed": "28.10 MB"
+  },
+  "queues": {
+    "mp3": { "size": 0, "pending": 0 },
+    "mp4": { "size": 0, "pending": 0 },
+    "transcript": { "size": 0, "pending": 0 }
+  },
+  "timestamp": "2024-01-15T10:30:00.000Z"
 }
 ```
 
@@ -94,7 +105,7 @@ Health check endpoint. **No authentication required.**
 
 ### GET /info
 
-Retrieve metadata about a YouTube video.
+Retrieve metadata about a YouTube video. Video metadata is cached for 10 minutes to improve speed.
 
 #### Query Parameters
 
@@ -167,7 +178,7 @@ Download YouTube video as MP3 audio file.
 
 #### Response
 
-Returns MP3 audio stream directly.
+Returns MP3 audio stream directly. Requests are internally managed in a queue to prevent timeouts.
 
 #### Example
 
@@ -225,12 +236,12 @@ Extract and optionally AI-clean YouTube video transcript.
 
 #### Query Parameters
 
-| Parameter     | Type    | Required | Default | Description                                 |
-| ------------- | ------- | -------- | ------- | ------------------------------------------- |
-| `url`         | string  | ✅ Yes   | -       | YouTube video URL                           |
-| `lang`        | string  | No       | `tr`    | Language code (e.g., `en`, `tr`, `es`)      |
-| `skipAI`      | boolean | No       | `false` | Skip AI processing (return raw transcript)  |
-| `useDeepSeek` | boolean | No       | `true`  | Use DeepSeek AI model (otherwise uses Qwen) |
+| Parameter     | Type    | Required | Default    | Description                                                                 |
+| ------------- | ------- | -------- | ---------- | --------------------------------------------------------------------------- |
+| `url`         | string  | ✅ Yes   | -             | YouTube video URL                                                           |
+| `lang`        | string  | No       | `Auto-detect` | Requested language code (e.g. `es`). System will auto-translate using AI if natively unavailable. |
+| `quality`     | string  | No       | `standard`    | AI cleaning level (`fast`-no AI, `standard` -1 pass AI, `thorough`- 2 pass) |
+| `useDeepSeek` | boolean | No       | `true`        | Use DeepSeek AI model (otherwise uses Qwen)                                 |
 
 #### Response (202 Accepted)
 
@@ -248,7 +259,7 @@ Extract and optionally AI-clean YouTube video transcript.
 ```bash
 # Step 1: Initiate transcript processing
 curl --request GET \
-  --url 'https://youtube-multi-api.p.rapidapi.com/transcript?url=https://www.youtube.com/watch?v=VIDEO_ID&lang=en' \
+  --url 'https://youtube-multi-api.p.rapidapi.com/transcript?url=https://www.youtube.com/watch?v=VIDEO_ID&lang=en&quality=standard' \
   --header 'x-rapidapi-key: YOUR_KEY' \
   --header 'x-rapidapi-host: YOUR_HOST'
 
@@ -311,8 +322,8 @@ Retrieve the result of a completed asynchronous operation.
   "success": true,
   "title": "Video Title",
   "language": "en",
+  "quality": "standard",
   "transcript": "The cleaned and formatted transcript text...",
-  "ai_notes": "Optional notes from AI processing",
   "isProcessed": true,
   "processor": "deepseek",
   "video_id": "dQw4w9WgXcQ",
@@ -420,6 +431,7 @@ Exchange a Supabase access token for an API JWT token.
 | ---------------------------- | -------------------------------- | ------------------------------------------------------------------- |
 | `Missing url parameter`      | URL not provided                 | Include `url` query parameter                                       |
 | `Processing ID not found`    | Invalid or expired ID            | Use a valid processing ID                                           |
+| `VIDEO_UNAVAILABLE`          | Video corresponds to Private/Lock| Ensure the video is public and valid                                |
 | `NO_CAPTIONS_AVAILABLE`      | Video has no captions at all     | See [Transcript Troubleshooting](#transcript-troubleshooting) below |
 | `LANGUAGE_NOT_AVAILABLE`     | Requested language not available | Use one of the available languages listed in error                  |
 | `Process cannot be canceled` | Already completed                | No action needed                                                    |
@@ -511,7 +523,7 @@ async function getTranscript(videoUrl, lang = "en") {
   const startResponse = await axios.get(
     "https://youtube-multi-api.p.rapidapi.com/transcript",
     {
-      params: { url: videoUrl, lang },
+      params: { url: videoUrl, lang, quality: "standard" },
       headers: {
         "x-rapidapi-key": API_KEY,
         "x-rapidapi-host": API_HOST,
@@ -572,7 +584,7 @@ def get_transcript(video_url, lang='en'):
     # Start processing
     response = requests.get(
         f'{BASE_URL}/transcript',
-        params={'url': video_url, 'lang': lang},
+        params={'url': video_url, 'lang': lang, 'quality': 'standard'},
         headers=headers
     )
     processing_id = response.json()['processingId']
@@ -622,7 +634,7 @@ curl --request GET \
 
 # Start transcript processing
 curl --request GET \
-  --url 'https://youtube-multi-api.p.rapidapi.com/transcript?url=https://www.youtube.com/watch?v=VIDEO_ID&lang=en' \
+  --url 'https://youtube-multi-api.p.rapidapi.com/transcript?url=https://www.youtube.com/watch?v=VIDEO_ID&lang=en&quality=standard' \
   --header 'x-rapidapi-key: YOUR_KEY' \
   --header 'x-rapidapi-host: YOUR_HOST'
 
@@ -643,18 +655,16 @@ curl --request GET \
 
 ## Important Notes
 
-- **Temporary Storage**: All processing results are temporary and immediately discarded after delivery
-- **Streaming**: MP3/MP4 files are streamed directly without server storage
-- **Ephemeral Progress**: Progress data is not persisted - poll promptly for results
-- **Video Availability**: Some videos may be region-locked or unavailable for download
+- **Persistent Cloud Storage**: Background jobs and progress data are persistently stored via Supabase postgres. Long-running jobs will securely recover and resume upon server resets. Result outputs continue to be discarded after some time.
+- **Streaming**: MP3/MP4 files are streamed directly through a task queue without server storage to accommodate higher traffic concurrent downloads.
+- **Video Availability**: Some videos may be region-locked or unavailable for download. These throw `VIDEO_UNAVAILABLE` errors.
 - **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction
 - **Whisper STT Fallback**: When YouTube captions are unavailable and `OPENAI_API_KEY` is configured, the API uses OpenAI Whisper for speech-to-text transcription (~$0.006/min). Long videos are automatically chunked into 10-minute segments.
-- **Language Fallback**: The API automatically tries language variants (e.g., `en` → `en-US` → `en-GB`) when the exact requested language isn't available
+- **Language Fallback**: The API automatically tries language variants (`-orig` auto-captions, `en` → `en-US` → `en-GB`) when the exact requested language isn't present initially.
 - **Temp File Cleanup**: The server implements multiple safeguards to ensure temporary files are cleaned up:
-  1. **Startup Cleanup**: Clears any leftover temp files from previous runs when the server starts
+  1. **Startup Cleanup**: Clears any leftover temp files and stale jobs from previous runs when the server starts
   2. **Graceful Shutdown**: Handles SIGTERM/SIGINT signals to clean up in-flight jobs and temp files
-  3. **Periodic Cleanup**: A cron job runs every 15 minutes to delete temp files older than 30 minutes
-  4. **Exception Handling**: Attempts to clean up temp files even on uncaught exceptions
+  3. **Periodic Cleanup**: A cron job runs every 6 hours through Supabase to delete stale API jobs
 
 ---
 

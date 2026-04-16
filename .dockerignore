@@ -1,0 +1,10 @@
+node_modules
+.git
+.env
+cookies.txt
+keys/
+*.log
+temp/
+.idea
+.vscode
+.vercel

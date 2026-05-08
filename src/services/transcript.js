@@ -7,104 +7,169 @@ const { isWhisperAvailable, extractAudioForWhisper, transcribeWithWhisper } = re
 // youtube-transcript-plus is ESM, dynamically imported
 let fetchYTTranscript = null;
 
+// ─── 429 Circuit Breaker ───
+// When YouTube rate-limits us, remember it and skip all YouTube caption
+// requests for a cooldown period instead of hammering them with more requests.
+let youtubeRateLimitedUntil = 0;
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+function isYouTubeRateLimited() {
+  return Date.now() < youtubeRateLimitedUntil;
+}
+
+function triggerRateLimitCooldown(source) {
+  youtubeRateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+  logger.warn("⚡ 429 Circuit Breaker ACTIVATED — skipping YouTube caption requests", {
+    source,
+    cooldownMinutes: RATE_LIMIT_COOLDOWN_MS / 60000,
+    resumesAt: new Date(youtubeRateLimitedUntil).toISOString(),
+  });
+}
+
+function is429Error(error) {
+  if (!error) return false;
+  const msg = (error.message || "").toLowerCase();
+  const name = (error.constructor?.name || "").toLowerCase();
+  return (
+    msg.includes("429") ||
+    msg.includes("too many request") ||
+    name.includes("toomanyrequesterror")
+  );
+}
+
 /**
  * Get video transcript with multi-layer fallback:
  * 1. YouTube captions (from video info)
  * 2. youtube-transcript-plus
  * 3. yt-dlp --write-auto-subs
  * 4. OpenAI Whisper STT (if configured)
+ *
+ * If YouTube returns 429 at any layer, the circuit breaker activates
+ * and all remaining YouTube-based fallbacks are skipped immediately.
  */
-async function getVideoTranscript(url, lang = "tr", signal) {
-  const safeLang = lang || "tr";
+async function getVideoTranscript(url, lang, signal) {
   const info = await getVideoInfo(url, { signal });
+  const safeLang = lang || getDefaultLanguage(info);
 
-  const { tracks, usedLang } = findLanguageTracks(info, safeLang);
+  // Track whether we should skip YouTube fallbacks
+  let skipYouTubeFallbacks = isYouTubeRateLimited();
 
-  // If we found tracks from video info, use them
-  if (tracks.length > 0) {
-    if (usedLang !== safeLang) {
-      logger.info("Language fallback used", {
-        requested: safeLang,
-        used: usedLang,
-      });
+  if (skipYouTubeFallbacks) {
+    logger.warn("⚡ 429 Circuit Breaker active — skipping all YouTube caption methods", {
+      videoId: info.id,
+      resumesAt: new Date(youtubeRateLimitedUntil).toISOString(),
+    });
+  }
+
+  // ─── Layer 1: YouTube captions from video info metadata ───
+  if (!skipYouTubeFallbacks) {
+    const { tracks, usedLang } = findLanguageTracks(info, safeLang);
+
+    if (tracks.length > 0) {
+      if (usedLang !== safeLang) {
+        logger.info("Language fallback used", {
+          requested: safeLang,
+          used: usedLang,
+        });
+      }
+
+      const track =
+        tracks.find(
+          (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1",
+        ) || tracks[0];
+
+      try {
+        const transcriptResponse = await axios.get(track.url, { signal });
+        return { transcript: transcriptResponse.data, info, usedLang };
+      } catch (trackError) {
+        logger.warn("Failed to fetch track URL, trying fallbacks", {
+          videoId: info.id,
+          trackUrl: track.url?.substring(0, 100) + "...",
+          error: trackError.message,
+        });
+        if (is429Error(trackError)) {
+          triggerRateLimitCooldown("track-url-fetch");
+          skipYouTubeFallbacks = true;
+        }
+      }
     }
+  }
 
-    const track =
-      tracks.find(
-        (t) => t.ext === "ttml" || t.ext === "xml" || t.ext === "srv1",
-      ) || tracks[0];
-
+  // ─── Layer 2: youtube-transcript-plus ───
+  if (!skipYouTubeFallbacks) {
     try {
-      const transcriptResponse = await axios.get(track.url, { signal });
-      return { transcript: transcriptResponse.data, info, usedLang };
-    } catch (trackError) {
-      logger.warn("Failed to fetch track URL, trying fallbacks", {
-        videoId: info.id,
-        trackUrl: track.url?.substring(0, 100) + "...",
-        error: trackError.message,
-      });
-    }
-  }
-
-  // Fallback 1: youtube-transcript-plus
-  try {
-    logger.info("No captions in video info, trying youtube-transcript-plus", {
-      videoId: info.id,
-      requestedLang: safeLang,
-    });
-
-    if (!fetchYTTranscript) {
-      const ytTranscriptModule = await import("youtube-transcript-plus");
-      fetchYTTranscript = ytTranscriptModule.fetchTranscript;
-    }
-
-    const baseLang = safeLang.split("-")[0];
-    const ytTranscript = await fetchYTTranscript(info.id, { lang: baseLang });
-
-    if (ytTranscript && ytTranscript.length > 0) {
-      const transcriptText = ytTranscript
-        .map((segment) => segment.text)
-        .join(" ");
-      logger.info(
-        "Successfully fetched transcript via youtube-transcript-plus",
-        { videoId: info.id, segments: ytTranscript.length },
-      );
-      return { transcript: transcriptText, info, usedLang: baseLang };
-    }
-  } catch (ytError) {
-    logger.warn("youtube-transcript-plus fallback failed", {
-      videoId: info.id,
-      error: ytError.message,
-      errorType: ytError.constructor.name,
-    });
-  }
-
-  // Fallback 2: yt-dlp --write-auto-subs — try all known language variants
-  const { getLanguageVariants } = require("../utils/subtitleParser");
-  const langVariants = getLanguageVariants(info, safeLang);
-  // Also include the exact requested lang and base lang even if they're not in captions
-  const baseLang = safeLang.split("-")[0];
-  const langsToTry = [...new Set([safeLang, ...langVariants, baseLang])];
-
-  logger.info("Trying yt-dlp auto-subs fallback", {
-    videoId: info.id,
-    requestedLang: safeLang,
-    variants: langsToTry,
-  });
-
-  for (const tryLang of langsToTry) {
-    const autoSubsContent = await fetchAutoSubsWithYtDlp(url, tryLang, signal);
-    if (autoSubsContent) {
-      logger.info("yt-dlp auto-subs succeeded with variant", {
+      logger.info("Trying youtube-transcript-plus fallback", {
         videoId: info.id,
         requestedLang: safeLang,
-        resolvedLang: tryLang,
       });
-      return { transcript: autoSubsContent, info, usedLang: tryLang };
+
+      if (!fetchYTTranscript) {
+        const ytTranscriptModule = await import("youtube-transcript-plus");
+        fetchYTTranscript = ytTranscriptModule.fetchTranscript;
+      }
+
+      const baseLang = safeLang.split("-")[0];
+      const ytTranscript = await fetchYTTranscript(info.id, { lang: baseLang });
+
+      if (ytTranscript && ytTranscript.length > 0) {
+        const transcriptText = ytTranscript
+          .map((segment) => segment.text)
+          .join(" ");
+        logger.info(
+          "Successfully fetched transcript via youtube-transcript-plus",
+          { videoId: info.id, segments: ytTranscript.length },
+        );
+        return { transcript: transcriptText, info, usedLang: baseLang };
+      }
+    } catch (ytError) {
+      logger.warn("youtube-transcript-plus fallback failed", {
+        videoId: info.id,
+        error: ytError.message,
+        errorType: ytError.constructor.name,
+      });
+      if (is429Error(ytError)) {
+        triggerRateLimitCooldown("youtube-transcript-plus");
+        skipYouTubeFallbacks = true;
+      }
     }
   }
 
-  // Fallback 3: Whisper STT
+  // ─── Layer 3: yt-dlp --write-auto-subs ───
+  if (!skipYouTubeFallbacks) {
+    const { getLanguageVariants } = require("../utils/subtitleParser");
+    const langVariants = getLanguageVariants(info, safeLang);
+    const baseLang = safeLang.split("-")[0];
+    const langsToTry = [...new Set([safeLang, ...langVariants, baseLang])];
+
+    logger.info("Trying yt-dlp auto-subs fallback", {
+      videoId: info.id,
+      requestedLang: safeLang,
+      variants: langsToTry,
+    });
+
+    for (const tryLang of langsToTry) {
+      try {
+        const autoSubsContent = await fetchAutoSubsWithYtDlp(url, tryLang, signal);
+        if (autoSubsContent) {
+          logger.info("yt-dlp auto-subs succeeded with variant", {
+            videoId: info.id,
+            requestedLang: safeLang,
+            resolvedLang: tryLang,
+          });
+          return { transcript: autoSubsContent, info, usedLang: tryLang };
+        }
+      } catch (subsError) {
+        // If ANY variant returns 429, stop trying the rest — it's server-level
+        if (is429Error(subsError)) {
+          triggerRateLimitCooldown(`yt-dlp-auto-subs-${tryLang}`);
+          skipYouTubeFallbacks = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // ─── Layer 4: Whisper STT (costs money — only if YouTube is exhausted) ───
   if (isWhisperAvailable()) {
     logger.info(
       "🎤 Whisper: All YouTube caption methods failed, initiating Whisper STT fallback",
@@ -114,7 +179,7 @@ async function getVideoTranscript(url, lang = "tr", signal) {
         videoDuration: info.duration
           ? `${(info.duration / 60).toFixed(1)} minutes`
           : "unknown",
-        requestedLang: safeLang,
+        rateLimited: skipYouTubeFallbacks,
       },
     );
 

@@ -49,7 +49,8 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
 
       if (response.data && response.data.choices && response.data.choices[0]) {
         const choice = response.data.choices[0];
-        const outputLength = choice.message?.content?.length || 0;
+        const content = choice.message?.content;
+        const outputLength = content?.length || 0;
         const finishReason = choice.finish_reason;
 
         logger.ai("AI response received", {
@@ -64,6 +65,13 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
             model,
             outputLength,
           });
+        }
+
+        // Guard against null/empty content — force retry instead of crashing downstream
+        if (!content || content.trim().length === 0) {
+          throw new Error(
+            `AI model returned empty content (model: ${model}, finishReason: ${finishReason})`,
+          );
         }
 
         return response.data;

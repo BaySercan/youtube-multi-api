@@ -12,6 +12,18 @@ router.get("/mp4", async (req, res) => {
   if (!url) return res.status(400).send("Missing url parameter");
   const videoUrl = Array.isArray(url) ? url[0] : url;
 
+  // Pre-flight check: Immediately reject private/invalid videos before queuing
+  let preflightInfo;
+  try {
+    preflightInfo = await getVideoInfo(videoUrl);
+  } catch (error) {
+    logger.error("Pre-flight check failed for MP4", { error: error.message });
+    return res.status(400).json({
+      success: false,
+      error: `Video validation failed: ${error.message}`
+    });
+  }
+
   const processingId = uuidv4();
   const job = createJob(processingId, "mp4", { status: "initializing" });
 

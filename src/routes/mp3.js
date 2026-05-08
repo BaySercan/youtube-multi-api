@@ -12,6 +12,18 @@ router.get("/mp3", async (req, res) => {
   if (!url) return res.status(400).send("Missing url parameter");
   const videoUrl = Array.isArray(url) ? url[0] : url;
 
+  // Pre-flight check: Immediately reject private/invalid videos before queuing
+  let preflightInfo;
+  try {
+    preflightInfo = await getVideoInfo(videoUrl);
+  } catch (error) {
+    logger.error("Pre-flight check failed for MP3", { error: error.message });
+    return res.status(400).json({
+      success: false,
+      error: `Video validation failed: ${error.message}`
+    });
+  }
+
   const processingId = uuidv4();
   const job = createJob(processingId, "mp3", { status: "initializing" });
 
@@ -21,7 +33,7 @@ router.get("/mp3", async (req, res) => {
   processingQueue.add(async () => {
     try {
       updateProgress(processingId, 10, "processing");
-      const info = await getVideoInfo(videoUrl);
+      const info = await getVideoInfo(videoUrl); // Pulls instantly from cache
       updateProgress(processingId, 20, "validating", info.id, info.title);
 
       const fileName = `${info.title.replace(/[^\w\s.-]/gi, "")}.mp3`;

@@ -23,7 +23,7 @@ module.exports = {
   MAX_TEMP_FILE_AGE_MS: 30 * 60 * 1000, // 30 minutes
 
   // Processing queue
-  QUEUE_CONCURRENCY: 4,
+  QUEUE_CONCURRENCY: 2,
   QUEUE_INTERVAL_CAP: 5,
   QUEUE_INTERVAL: 1000, // 1 second
   QUEUE_TIMEOUT: 30 * 60 * 1000, // 30 minutes

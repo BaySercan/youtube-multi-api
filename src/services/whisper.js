@@ -12,11 +12,23 @@ const openai = config.OPENAI_API_KEY
   : null;
 
 /**
- * Check if Whisper is available (OpenAI API key configured)
+ * Check if Whisper is available and enabled.
+ * Controlled by OPENAI_API_KEY (must exist) and WHISPER_ENABLED env var.
+ * WHISPER_ENABLED defaults to "true" — set to "false" to disable.
  */
 function isWhisperAvailable() {
-  return !!openai;
+  if (!openai) return false;
+  const enabled = process.env.WHISPER_ENABLED !== "false";
+  return enabled;
 }
+
+// Maximum video duration (in seconds) that Whisper will process.
+// Videos longer than this are skipped to prevent excessive costs.
+// Default: 45 minutes. Override with WHISPER_MAX_DURATION_SECONDS env var.
+const WHISPER_MAX_DURATION_SECONDS = parseInt(
+  process.env.WHISPER_MAX_DURATION_SECONDS || "2700",
+  10,
+);
 
 /**
  * Get audio duration in seconds using ffprobe
@@ -174,6 +186,22 @@ async function extractAudioForWhisper(url, signal) {
 
       try {
         const duration = await getAudioDuration(audioPath);
+
+        // Cost guard: skip excessively long videos
+        if (duration > WHISPER_MAX_DURATION_SECONDS) {
+          const estimatedCost = ((duration / 60) * 0.006).toFixed(2);
+          logger.warn(
+            "🎤 Whisper: Video too long — skipping to prevent excessive cost",
+            {
+              durationMinutes: (duration / 60).toFixed(1),
+              maxAllowedMinutes: (WHISPER_MAX_DURATION_SECONDS / 60).toFixed(0),
+              estimatedCost: `$${estimatedCost}`,
+            },
+          );
+          await fs.unlink(audioPath).catch(() => {});
+          return null;
+        }
+
         const estimatedChunks = Math.ceil(
           duration / config.WHISPER_CHUNK_DURATION_SECONDS,
         );
@@ -182,6 +210,7 @@ async function extractAudioForWhisper(url, signal) {
           audioDuration: `${(duration / 60).toFixed(1)} minutes`,
           estimatedChunks,
           chunkSize: `${config.WHISPER_CHUNK_DURATION_SECONDS / 60} minutes each`,
+          estimatedCost: `$${((duration / 60) * 0.006).toFixed(3)}`,
         });
 
         const chunkPaths = await splitAudioIntoChunks(
@@ -222,7 +251,7 @@ async function extractAudioForWhisper(url, signal) {
 /**
  * Transcribe a single audio file using OpenAI Whisper API
  */
-async function transcribeSingleFile(audioPath, lang = "tr") {
+async function transcribeSingleFile(audioPath, lang = "en") {
   const transcriptionStart = Date.now();
 
   const transcription = await openai.audio.transcriptions.create({
@@ -239,7 +268,7 @@ async function transcribeSingleFile(audioPath, lang = "tr") {
 /**
  * Transcribe audio using OpenAI Whisper API (supports chunked files)
  */
-async function transcribeWithWhisper(audioData, lang = "tr") {
+async function transcribeWithWhisper(audioData, lang = "en") {
   if (!openai) {
     logger.warn("🎤 Whisper: OpenAI client not initialized - OPENAI_API_KEY not set");
     return null;

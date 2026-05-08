@@ -14,6 +14,7 @@ const {
   cleanSubtitleLines,
 } = require("../utils/subtitleParser");
 const { createJob, getQueue, updateProgress } = require("../services/jobManager");
+const { logRequest, classifyError } = require("../services/requestLogger");
 
 router.get("/transcript", async (req, res) => {
   const { url, lang } = req.query;
@@ -32,8 +33,22 @@ router.get("/transcript", async (req, res) => {
     return res.status(400).send("url parameter must be a string");
   }
 
-  const processingId = uuidv4();
   const abortController = new AbortController();
+
+  // Pre-flight check: Immediately reject private/invalid videos before queuing
+  let preflightInfo;
+  try {
+    const { getVideoInfo } = require("../services/ytdlp");
+    preflightInfo = await getVideoInfo(videoUrl, { signal: abortController.signal });
+  } catch (error) {
+    logger.error("Pre-flight check failed", { error: error.message });
+    return res.status(400).json({
+      success: false,
+      error: `Video validation failed: ${error.message}`
+    });
+  }
+
+  const processingId = uuidv4();
   const job = createJob(processingId, "transcript", {
     abortController: abortController,
   });
@@ -41,6 +56,7 @@ router.get("/transcript", async (req, res) => {
   const processingQueue = getQueue();
 
   processingQueue.add(async () => {
+    const startTime = Date.now();
     try {
       updateProgress(processingId, 10, "Getting video information...");
 
@@ -165,7 +181,6 @@ router.get("/transcript", async (req, res) => {
 
       updateProgress(processingId, 100, "completed");
       const lastRequested = new Date().toISOString();
-      const requestedLang = req.query.lang || info.language || "tr";
 
       logger.job(processingId, "Transcript processing completed", {
         videoId: info.id,
@@ -193,10 +208,39 @@ router.get("/transcript", async (req, res) => {
         ).toISOString() : null,
         last_requested: lastRequested,
       };
+
+      // 📊 Log successful request to Supabase
+      logRequest({
+        processingId,
+        endpoint: "transcript",
+        videoId: info.id,
+        videoTitle: info.title,
+        requestedLang: req.query.lang || null,
+        usedLang: targetLang || usedLang,
+        status: "completed",
+        success: true,
+        aiModel: null,
+        aiProcessor: isProcessed ? processorUsed : "none",
+        isProcessed,
+        transcriptSource: null,
+        transcriptLength: finalTranscript?.length || 0,
+        durationMs: Date.now() - startTime,
+        quality,
+        ip: req.ip,
+      });
     } catch (error) {
       if (error.name === "AbortError") {
         logger.job(processingId, "Transcript job canceled");
         updateProgress(processingId, 100, "canceled");
+        logRequest({
+          processingId,
+          endpoint: "transcript",
+          status: "canceled",
+          success: false,
+          errorType: "CANCELED",
+          durationMs: Date.now() - startTime,
+          ip: req.ip,
+        });
       } else {
         logger.jobError(processingId, "Transcript processing failed", error);
         updateProgress(processingId, 100, "failed");
@@ -204,6 +248,16 @@ router.get("/transcript", async (req, res) => {
           success: false,
           error: `Could not fetch transcript: ${error.message}. Video might not have subtitles in the requested language or they are disabled.`,
         };
+        logRequest({
+          processingId,
+          endpoint: "transcript",
+          status: "failed",
+          success: false,
+          errorMessage: error.message,
+          errorType: classifyError(error.message),
+          durationMs: Date.now() - startTime,
+          ip: req.ip,
+        });
       }
     }
   });

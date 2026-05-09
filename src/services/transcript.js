@@ -80,7 +80,7 @@ async function getVideoTranscript(url, lang, signal) {
 
       try {
         const transcriptResponse = await axios.get(track.url, { signal });
-        return { transcript: transcriptResponse.data, info, usedLang };
+        return { transcript: transcriptResponse.data, info, usedLang, source: "captions" };
       } catch (trackError) {
         logger.warn("Failed to fetch track URL, trying fallbacks", {
           videoId: info.id,
@@ -119,7 +119,7 @@ async function getVideoTranscript(url, lang, signal) {
           "Successfully fetched transcript via youtube-transcript-plus",
           { videoId: info.id, segments: ytTranscript.length },
         );
-        return { transcript: transcriptText, info, usedLang: baseLang };
+        return { transcript: transcriptText, info, usedLang: baseLang, source: "youtube-transcript-plus" };
       }
     } catch (ytError) {
       logger.warn("youtube-transcript-plus fallback failed", {
@@ -156,7 +156,7 @@ async function getVideoTranscript(url, lang, signal) {
             requestedLang: safeLang,
             resolvedLang: tryLang,
           });
-          return { transcript: autoSubsContent, info, usedLang: tryLang };
+          return { transcript: autoSubsContent, info, usedLang: tryLang, source: "yt-dlp-auto-subs" };
         }
       } catch (subsError) {
         // If ANY variant returns 429, stop trying the rest — it's server-level
@@ -203,7 +203,7 @@ async function getVideoTranscript(url, lang, signal) {
           audioType: audioData.type,
           spokenLanguageIdentified: originalLang,
         });
-        return { transcript: whisperTranscript, info, usedLang: originalLang };
+        return { transcript: whisperTranscript, info, usedLang: originalLang, source: "whisper" };
       } else {
         logger.error("🎤 Whisper: Transcription returned null", {
           videoId: info.id,

@@ -58,7 +58,6 @@ async function logRequest(data) {
             : null,
           error_type: data.errorType || null,
           ai_model: data.aiModel || null,
-          ai_processor: data.aiProcessor || null,
           is_processed: data.isProcessed || false,
           transcript_source: data.transcriptSource || null,
           transcript_length: data.transcriptLength || null,

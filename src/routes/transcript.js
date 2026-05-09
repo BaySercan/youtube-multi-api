@@ -60,7 +60,7 @@ router.get("/transcript", async (req, res) => {
     try {
       updateProgress(processingId, 10, "Getting video information...");
 
-      const { transcript: transcriptContent, info, usedLang } = await getVideoTranscript(
+      const { transcript: transcriptContent, info, usedLang, source: transcriptSource } = await getVideoTranscript(
         videoUrl,
         lang,
         abortController.signal,
@@ -108,8 +108,8 @@ router.get("/transcript", async (req, res) => {
             );
             updateProgress(processingId, 60, "First AI pass complete, running cleanup...");
 
-            if (firstResponse.modelUsed === "qwen") {
-              processorUsed = "qwen";
+            if (firstResponse.modelUsed) {
+              processorUsed = firstResponse.modelUsed;
             }
 
             const cleanupMessages = [
@@ -146,8 +146,8 @@ router.get("/transcript", async (req, res) => {
               abortController.signal,
             );
 
-            if (response.modelUsed === "qwen") {
-              processorUsed = "qwen";
+            if (response.modelUsed) {
+              processorUsed = response.modelUsed;
             }
 
             let transcriptText = response.choices[0].message.content.trim();
@@ -219,10 +219,9 @@ router.get("/transcript", async (req, res) => {
         usedLang: targetLang || usedLang,
         status: "completed",
         success: true,
-        aiModel: null,
-        aiProcessor: isProcessed ? processorUsed : "none",
+        aiModel: isProcessed ? processorUsed : null,
         isProcessed,
-        transcriptSource: null,
+        transcriptSource,
         transcriptLength: finalTranscript?.length || 0,
         durationMs: Date.now() - startTime,
         quality,

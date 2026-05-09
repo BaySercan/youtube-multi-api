@@ -74,7 +74,10 @@ async function callAIModel(messages, useDeepSeek = true, signal) {
           );
         }
 
-        return response.data;
+        // Attach the exact model used to the response object
+        const result = response.data;
+        result.modelUsed = model;
+        return result;
       } else {
         throw new Error("Invalid API response format");
       }

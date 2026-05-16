@@ -174,6 +174,26 @@ function sanitizeYtDlpError(error) {
 }
 
 /**
+ * Detect errors that are permanent/deterministic and should NOT be retried.
+ * Private videos, removed videos, upcoming live events — these will never
+ * succeed no matter how many times we call yt-dlp.
+ */
+function isPermanentYtDlpError(error) {
+  const msg = (error.message || "").toLowerCase();
+  return (
+    msg.includes("private video") ||
+    msg.includes("video unavailable") ||
+    msg.includes("live event will begin") ||
+    msg.includes("has been removed by the uploader") ||
+    msg.includes("this video is not available") ||
+    msg.includes("members-only") ||
+    msg.includes("confirm your age") ||
+    msg.includes("account associated with this video has been terminated") ||
+    msg.includes("this channel does not exist")
+  );
+}
+
+/**
  * Get video info using yt-dlp (uncached — internal)
  */
 async function _getVideoInfoUncached(url, options = {}, retries = 3) {
@@ -208,6 +228,16 @@ async function _getVideoInfoUncached(url, options = {}, retries = 3) {
         logger.debug("Video info fetch aborted");
         throw error;
       }
+
+      // Permanent errors: no point retrying — throw immediately
+      if (isPermanentYtDlpError(error)) {
+        logger.error("Video info fetch failed (permanent error, skipping retries)", {
+          attempt: i + 1,
+          error: error.message,
+        });
+        throw sanitizeYtDlpError(error);
+      }
+
       logger.error("Video info fetch failed", {
         attempt: i + 1,
         maxRetries: retries,

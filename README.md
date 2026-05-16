@@ -10,6 +10,7 @@ REST API to download YouTube videos as MP3/MP4 files and get video transcripts. 
 - Files are streamed directly without server storage
 - Progress data is ephemeral and not persisted
 - Do not rely on long-term result availability
+- Private, removed, upcoming live-event, members-only, and age-restricted videos cannot be transcribed — the API responds immediately with HTTP 200 + `{ "success": false }` for these cases
 
 ## API Base URL
 
@@ -255,12 +256,12 @@ Initiate transcript processing
 **Query Parameters:**
 
 - `url` (required) - YouTube video URL
-- `lang` (optional) - Language code (default: 'tr')
+- `lang` (optional) - Language code (default: auto-detect)
 - `quality` (optional) - AI cleaning level: `fast` (no AI, instant), `standard` (default, single AI pass), `thorough` (two AI passes).
 - `skipAI` (deprecated) - Maps to `quality=fast`
 - `useDeepSeek` (optional) - Use DeepSeek model (default: true)
 
-**Response (202 Accepted):**
+**Response (202 Accepted) — video is accessible:**
 
 ```json
 {
@@ -270,6 +271,19 @@ Initiate transcript processing
   "resultEndpoint": "/result/unique-job-id"
 }
 ```
+
+**Response (200 OK) — video is permanently unavailable:**
+
+Returned immediately when the video is private, removed, an upcoming live event, members-only, or age-restricted. No job is queued. Always check the `success` field.
+
+```json
+{
+  "success": false,
+  "error": "VIDEO_UNAVAILABLE: Private video."
+}
+```
+
+> ⚠️ **Note:** The endpoint returns **HTTP 200** (not 400) for permanent video errors. These are valid requests — the video is simply not publicly accessible. Always check `success` before polling `/progress` or `/result`.
 
 ### GET /progress/:id
 

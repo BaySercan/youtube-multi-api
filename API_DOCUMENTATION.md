@@ -408,33 +408,48 @@ Exchange a Supabase access token for an API JWT token.
 
 ### Error Response Format
 
+For standard API errors:
+
 ```json
 {
   "error": "Error message describing what went wrong"
 }
 ```
 
+For video-level failures (private, unavailable, live events, etc.):
+
+```json
+{
+  "success": false,
+  "error": "VIDEO_UNAVAILABLE: Private video."
+}
+```
+
 ### HTTP Status Codes
 
-| Code  | Description                                      |
-| ----- | ------------------------------------------------ |
-| `200` | Success                                          |
-| `202` | Accepted (asynchronous processing started)       |
-| `400` | Bad Request - Invalid parameters                 |
-| `401` | Unauthorized - Invalid or missing authentication |
-| `404` | Not Found - Resource or processing ID not found  |
-| `500` | Internal Server Error                            |
+| Code  | Description                                                                         |
+| ----- | ----------------------------------------------------------------------------------- |
+| `200` | Success **or** video-level failure (check `success` field in response body)         |
+| `202` | Accepted (asynchronous processing started)                                          |
+| `400` | Bad Request — invalid or missing parameters (e.g. no `url` provided)               |
+| `401` | Unauthorized — invalid or missing authentication                                    |
+| `404` | Not Found — resource or processing ID not found                                     |
+| `500` | Internal Server Error                                                               |
+
+> ⚠️ **Important:** The `/transcript` endpoint returns **HTTP 200** even when a video cannot be processed (private, removed, upcoming live event, members-only, age-restricted). Always check the `success` field in the response body — `true` means processing started, `false` means the video is inherently unavailable.
 
 ### Common Errors
 
-| Error                        | Cause                            | Solution                                                            |
-| ---------------------------- | -------------------------------- | ------------------------------------------------------------------- |
-| `Missing url parameter`      | URL not provided                 | Include `url` query parameter                                       |
-| `Processing ID not found`    | Invalid or expired ID            | Use a valid processing ID                                           |
-| `VIDEO_UNAVAILABLE`          | Video corresponds to Private/Lock| Ensure the video is public and valid                                |
-| `NO_CAPTIONS_AVAILABLE`      | Video has no captions at all     | See [Transcript Troubleshooting](#transcript-troubleshooting) below |
-| `LANGUAGE_NOT_AVAILABLE`     | Requested language not available | Use one of the available languages listed in error                  |
-| `Process cannot be canceled` | Already completed                | No action needed                                                    |
+| Error                           | HTTP | Cause                                   | Solution                                                            |
+| ------------------------------- | ---- | --------------------------------------- | ------------------------------------------------------------------- |
+| `Missing url parameter`         | 400  | URL not provided                        | Include `url` query parameter                                       |
+| `Processing ID not found`       | 404  | Invalid or expired ID                   | Use a valid processing ID                                           |
+| `VIDEO_UNAVAILABLE: Private...` | 200  | Video is private or members-only        | Use a publicly accessible video                                     |
+| `VIDEO_UNAVAILABLE: Video...`   | 200  | Video removed or region-blocked         | Use a different video                                               |
+| `VIDEO_UNAVAILABLE: live event` | 200  | Scheduled live stream not yet started   | Wait for the live event to start and the VOD to be available        |
+| `NO_CAPTIONS_AVAILABLE`         | 200  | Video has no captions at all            | See [Transcript Troubleshooting](#transcript-troubleshooting) below |
+| `LANGUAGE_NOT_AVAILABLE`        | 200  | Requested language not available        | Use one of the available languages listed in the error message      |
+| `Process cannot be canceled`    | 400  | Already completed                       | No action needed                                                    |
 
 ### Transcript Troubleshooting
 
@@ -657,8 +672,9 @@ curl --request GET \
 
 - **Persistent Cloud Storage**: Background jobs and progress data are persistently stored via Supabase postgres. Long-running jobs will securely recover and resume upon server resets. Result outputs continue to be discarded after some time.
 - **Streaming**: MP3/MP4 files are streamed directly through a task queue without server storage to accommodate higher traffic concurrent downloads.
-- **Video Availability**: Some videos may be region-locked or unavailable for download. These throw `VIDEO_UNAVAILABLE` errors.
-- **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction
+- **Video Availability**: Private, removed, upcoming live-event, members-only, and age-restricted videos **cannot be transcribed**. The API returns HTTP 200 with `{ "success": false, "error": "VIDEO_UNAVAILABLE: ..." }` immediately for these — no processing is queued. Check the `success` field before polling `/progress` or `/result`.
+- **No Retries on Permanent Errors**: When a video is provably inaccessible (private, removed, etc.) the API does not retry internally. The response is immediate, keeping latency low for these cases.
+- **Caption Fallback**: The API attempts multiple methods to fetch captions, including direct yt-dlp extraction.
 - **Whisper STT Fallback**: When YouTube captions are unavailable and `OPENAI_API_KEY` is configured, the API uses OpenAI Whisper for speech-to-text transcription (~$0.006/min). Long videos are automatically chunked into 10-minute segments.
 - **Language Fallback**: The API automatically tries language variants (`-orig` auto-captions, `en` → `en-US` → `en-GB`) when the exact requested language isn't present initially.
 - **Temp File Cleanup**: The server implements multiple safeguards to ensure temporary files are cleaned up:

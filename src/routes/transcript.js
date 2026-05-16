@@ -41,10 +41,35 @@ router.get("/transcript", async (req, res) => {
     const { getVideoInfo } = require("../services/ytdlp");
     preflightInfo = await getVideoInfo(videoUrl, { signal: abortController.signal });
   } catch (error) {
-    logger.error("Pre-flight check failed", { error: error.message });
-    return res.status(400).json({
+    const errMsg = error.message || "";
+    const errorType = classifyError(errMsg);
+
+    // Permanent video errors are a business-logic outcome, not a bad request.
+    // The client sent a valid URL — the video just can't be transcribed
+    // (private, removed, upcoming live event, age-restricted, members-only).
+    // Return 200 so RapidAPI doesn't count these against the API's health score.
+    const isPermanentVideoError = errMsg.startsWith("VIDEO_UNAVAILABLE:") ||
+      errorType === "VIDEO_PRIVATE" ||
+      errorType === "LIVE_EVENT";
+
+    const httpStatus = isPermanentVideoError ? 200 : 400;
+
+    logger.error("Pre-flight check failed", { error: errMsg, errorType, httpStatus });
+
+    // Log to Supabase for observability (fire-and-forget)
+    logRequest({
+      endpoint: "transcript",
+      status: "failed",
       success: false,
-      error: `Video validation failed: ${error.message}`
+      errorMessage: errMsg,
+      errorType,
+      durationMs: 0,
+      ip: req.ip,
+    });
+
+    return res.status(httpStatus).json({
+      success: false,
+      error: errMsg,
     });
   }
 
